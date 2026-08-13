@@ -1,0 +1,28 @@
+{"stream_id":"healthy","seq":1,"speaker":"user","timestamp":"2026-03-02T09:00:00Z","text":"Add a JSONL append-only writer under internal/store. Stdlib only."}
+{"stream_id":"healthy","seq":2,"speaker":"assistant","timestamp":"2026-03-02T09:01:10Z","text":"Added internal/store/jsonl.go. Writer.Append opens the file with O_APPEND and writes one line per record. No new dependencies."}
+{"stream_id":"healthy","seq":3,"speaker":"user","timestamp":"2026-03-02T09:02:40Z","text":"Good. Add the round-trip test."}
+{"stream_id":"healthy","seq":4,"speaker":"assistant","timestamp":"2026-03-02T09:03:55Z","text":"Added internal/store/jsonl_test.go: append three records, read them back, compare byte for byte."}
+{"stream_id":"healthy","seq":5,"speaker":"user","timestamp":"2026-03-02T09:05:02Z","text":"Run go vet and paste the output."}
+{"stream_id":"healthy","seq":6,"speaker":"assistant","timestamp":"2026-03-02T09:05:40Z","text":"go vet ./... printed nothing."}
+{"stream_id":"healthy","seq":7,"speaker":"user","timestamp":"2026-03-02T09:07:15Z","text":"Wire the reader into replay. Keep the writer signature unchanged."}
+{"stream_id":"healthy","seq":8,"speaker":"assistant","timestamp":"2026-03-02T09:09:20Z","text":"replay now reads through store.Reader. The writer signature is unchanged."}
+{"stream_id":"healthy","seq":9,"speaker":"user","timestamp":"2026-03-02T09:10:30Z","text":"Correct. Add Offset to SourceRef and thread it through the adapter."}
+{"stream_id":"healthy","seq":10,"speaker":"assistant","timestamp":"2026-03-02T09:12:05Z","text":"SourceRef.Offset is set from the line start offset in the generic adapter."}
+{"stream_id":"healthy","seq":11,"speaker":"user","timestamp":"2026-03-02T09:13:20Z","text":"Add a test that offsets survive a two-chunk decode."}
+{"stream_id":"healthy","seq":12,"speaker":"assistant","timestamp":"2026-03-02T09:15:44Z","text":"Added internal/adapter/generic_test.go. Decoding the file in two chunks yields identical offsets."}
+{"stream_id":"healthy","seq":13,"speaker":"user","timestamp":"2026-03-02T09:16:50Z","text":"Good. Write docs/EVENTS.md with the envelope fields."}
+{"stream_id":"healthy","seq":14,"speaker":"assistant","timestamp":"2026-03-02T09:19:02Z","text":"docs/EVENTS.md lists version, id, stream_id, seq, epoch, kind, source, class, payload."}
+{"stream_id":"healthy","seq":15,"speaker":"user","timestamp":"2026-03-02T09:20:10Z","text":"Add the kind table to that file."}
+{"stream_id":"healthy","seq":16,"speaker":"assistant","timestamp":"2026-03-02T09:21:30Z","text":"Added a table with one row per emitted kind."}
+{"stream_id":"healthy","seq":17,"speaker":"user","timestamp":"2026-03-02T09:22:40Z","text":"Run the full test suite."}
+{"stream_id":"healthy","seq":18,"speaker":"assistant","timestamp":"2026-03-02T09:23:50Z","text":"go test ./... passes. Fourteen packages, no failures."}
+{"stream_id":"healthy","seq":19,"speaker":"user","timestamp":"2026-03-02T09:25:00Z","text":"Commit that as 'store: append-only JSONL writer'."}
+{"stream_id":"healthy","seq":20,"speaker":"assistant","timestamp":"2026-03-02T09:25:40Z","text":"Committed 4f21ac9 with that message."}
+{"stream_id":"healthy","seq":21,"speaker":"user","timestamp":"2026-03-02T09:27:10Z","text":"Add the timeline writer. One row per human turn."}
+{"stream_id":"healthy","seq":22,"speaker":"assistant","timestamp":"2026-03-02T09:29:35Z","text":"Added internal/render/timeline.go. Columns are seq, chars, regime, si."}
+{"stream_id":"healthy","seq":23,"speaker":"user","timestamp":"2026-03-02T09:30:45Z","text":"Check that the CSV header is stable across runs."}
+{"stream_id":"healthy","seq":24,"speaker":"assistant","timestamp":"2026-03-02T09:32:00Z","text":"The header is a package-level constant. Two runs produce identical bytes."}
+{"stream_id":"healthy","seq":25,"speaker":"user","timestamp":"2026-03-02T09:33:10Z","text":"Good. Write the reader benchmark and record the numbers."}
+{"stream_id":"healthy","seq":26,"speaker":"assistant","timestamp":"2026-03-02T09:35:20Z","text":"BenchmarkRead: 1.2 us/op, 512 B/op, 4 allocs/op. Recorded in the test output."}
+{"stream_id":"healthy","seq":27,"speaker":"user","timestamp":"2026-03-02T09:36:30Z","text":"Good. That closes the store work."}
+{"stream_id":"healthy","seq":28,"speaker":"assistant","timestamp":"2026-03-02T09:37:00Z","text":"Store work is complete: writer, reader, offsets, timeline, benchmark."}

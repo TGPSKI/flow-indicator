@@ -1,0 +1,15 @@
+{
+  "records": 30,
+  "human_turns": 15,
+  "epochs": 2,
+  "corrections": 3,
+  "repair_episodes": 3,
+  "max_repair_depth": 1,
+  "min_obligation_repeat_events": 2,
+  "min_serialization_inflation": 3.0,
+  "min_unknown_assessments": 2,
+  "min_repair_claims": 1,
+  "repair_statuses": ["unknown", "unknown", "reset"],
+  "regimes_seen": ["FLOW", "RECOVERY", "RESET"],
+  "final_regime": "FLOW"
+}

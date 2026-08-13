@@ -1,0 +1,24 @@
+# Build output
+/flow-indicator
+
+# Fixture replay output (make replay)
+/.replay/
+
+# Test / coverage artifacts
+*.out
+*.test
+*.exe
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# private working notes -- never committed
+_private/

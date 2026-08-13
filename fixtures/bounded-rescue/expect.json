@@ -1,0 +1,15 @@
+{
+  "records": 32,
+  "human_turns": 16,
+  "epochs": 1,
+  "corrections": 1,
+  "repair_episodes": 1,
+  "max_repair_depth": 1,
+  "min_unknown_assessments": 1,
+  "min_repair_claims": 1,
+  "min_polluted_assessments": 0,
+  "repair_statuses": ["durably_closed"],
+  "regimes_seen": ["FLOW", "RECOVERY"],
+  "regimes_absent": ["THRASH", "RESET", "DRIFT"],
+  "final_regime": "FLOW"
+}

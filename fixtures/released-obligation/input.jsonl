@@ -1,0 +1,14 @@
+{"stream_id":"released-obligation","seq":1,"speaker":"user","timestamp":"2026-08-13T09:00:00Z","text":"Add a retry loop to internal/worker/retry.go. Only edit internal/worker."}
+{"stream_id":"released-obligation","seq":2,"speaker":"assistant","timestamp":"2026-08-13T09:01:20Z","text":"Added internal/worker/retry.go with a bounded retry loop. Nothing outside internal/worker was touched."}
+{"stream_id":"released-obligation","seq":3,"speaker":"user","timestamp":"2026-08-13T09:02:30Z","text":"Good. Always run make ci before you report back."}
+{"stream_id":"released-obligation","seq":4,"speaker":"assistant","timestamp":"2026-08-13T09:04:10Z","text":"Ran make ci. Vet, tests and lint are green."}
+{"stream_id":"released-obligation","seq":5,"speaker":"user","timestamp":"2026-08-13T09:05:00Z","text":"Add the backoff table next."}
+{"stream_id":"released-obligation","seq":6,"speaker":"assistant","timestamp":"2026-08-13T09:06:40Z","text":"Added the backoff table beside the retry loop. Ran make ci; still green."}
+{"stream_id":"released-obligation","seq":7,"speaker":"user","timestamp":"2026-08-13T09:07:30Z","text":"Disregard the only edit internal/worker rule. The adapter package needs the same treatment."}
+{"stream_id":"released-obligation","seq":8,"speaker":"assistant","timestamp":"2026-08-13T09:09:10Z","text":"Extended the retry loop to internal/adapter as well. Ran make ci; green."}
+{"stream_id":"released-obligation","seq":9,"speaker":"user","timestamp":"2026-08-13T09:10:00Z","text":"Add the adapter timeout constant."}
+{"stream_id":"released-obligation","seq":10,"speaker":"assistant","timestamp":"2026-08-13T09:11:30Z","text":"Added the timeout constant to internal/adapter. Ran make ci; green."}
+{"stream_id":"released-obligation","seq":11,"speaker":"user","timestamp":"2026-08-13T09:12:20Z","text":"Only edit internal/worker."}
+{"stream_id":"released-obligation","seq":12,"speaker":"assistant","timestamp":"2026-08-13T09:13:40Z","text":"Understood. Back inside internal/worker only."}
+{"stream_id":"released-obligation","seq":13,"speaker":"user","timestamp":"2026-08-13T09:14:30Z","text":"Add the jitter helper."}
+{"stream_id":"released-obligation","seq":14,"speaker":"assistant","timestamp":"2026-08-13T09:15:50Z","text":"Added the jitter helper in internal/worker. Ran make ci; green."}

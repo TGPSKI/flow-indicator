@@ -1,0 +1,13 @@
+{
+  "records": 28,
+  "human_turns": 14,
+  "epochs": 1,
+  "corrections": 0,
+  "repair_episodes": 0,
+  "max_repair_depth": 0,
+  "min_max_human_turn_chars": 2000,
+  "min_serialization_inflation": 3.0,
+  "regimes_seen": ["FLOW"],
+  "regimes_absent": ["DRIFT", "RECOVERY", "THRASH", "RESET"],
+  "final_regime": "FLOW"
+}

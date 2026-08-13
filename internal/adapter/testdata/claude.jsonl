@@ -1,0 +1,10 @@
+{"type":"mode","mode":"normal","sessionId":"5803f1"}
+{"parentUuid":null,"isSidechain":false,"type":"user","message":{"role":"user","content":"<local-command-caveat>caveat</local-command-caveat>"},"isMeta":true,"uuid":"u0","timestamp":"2026-03-11T08:00:00.000Z","sessionId":"5803f1"}
+{"parentUuid":null,"isSidechain":false,"type":"user","message":{"role":"user","content":"Add the retry loop. Stop after CI."},"uuid":"u1","timestamp":"2026-03-11T08:01:00.000Z","sessionId":"5803f1"}
+{"parentUuid":"u1","isSidechain":false,"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"hidden"},{"type":"text","text":"Adding the loop."},{"type":"tool_use","id":"t1","name":"Edit","input":{}}]},"uuid":"a1","timestamp":"2026-03-11T08:01:40.000Z","sessionId":"5803f1"}
+{"parentUuid":"a1","isSidechain":false,"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"file updated"}]},"toolUseResult":{"filePath":"retry.go"},"uuid":"r1","timestamp":"2026-03-11T08:01:41.000Z","sessionId":"5803f1"}
+{"parentUuid":"r1","isSidechain":true,"type":"user","message":{"role":"user","content":"Search the worker package."},"uuid":"s1","timestamp":"2026-03-11T08:02:00.000Z","sessionId":"5803f1"}
+{"parentUuid":"a1","isSidechain":false,"type":"system","subtype":"local_command","content":"<local-command-stdout></local-command-stdout>","uuid":"y1","timestamp":"2026-03-11T08:02:10.000Z","sessionId":"5803f1"}
+{"type":"file-history-delta","messageId":"m1","trackingPath":"retry.go","timestamp":"2026-03-11T08:02:20.000Z"}
+{"type":"future-record-kind","sessionId":"5803f1","timestamp":"2026-03-11T08:02:30.000Z"}
+{"parentUuid":"r1","isSidechain":false,"type":"user","message":{"role":"user","content":[{"type":"text","text":"No. That is the wrong file."}]},"uuid":"u2","timestamp":"2026-03-11T08:03:00.000Z","sessionId":"5803f1"}

@@ -1,0 +1,27 @@
+name: Feature Request
+description: Propose a measurement the instrument cannot make today
+labels: [enhancement]
+body:
+  - type: textarea
+    id: measurement
+    attributes:
+      label: The measurement you cannot make
+      description: >
+        What question about a stream does the instrument fail to answer, and
+        what evidence in a transcript would answer it?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Observable evidence
+      description: >
+        Which observable facts support it. Proposals that require claims about
+        hidden model state are out of scope.
+  - type: textarea
+    id: scope
+    attributes:
+      label: Relationship to the stop condition
+      description: >
+        The first build has a stop condition in AGENTS.md. Say whether this is
+        inside it or should wait.

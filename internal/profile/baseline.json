@@ -1,0 +1,118 @@
+{
+  "name": "baseline",
+  "version": "1",
+  "language": "en",
+  "description": "Shipped defaults. Surface forms an English-speaking operator commonly uses to correct, stop, constrain, accept and refer. Structural rules are not here: they live in code and carry no dial.",
+  "markers": {
+    "acceptance": {
+      "pattern": "^(good|correct|right|perfect|nice|thanks|thank you|yes|ok|okay|lgtm)\\b|\\b(that works|looks good|ship it)\\b"
+    },
+    "code_span": {
+      "pattern": "`[^`]+`",
+      "case_sensitive": true
+    },
+    "continuation": {
+      "pattern": "^(continue|proceed|go ahead|carry on|keep going)\\b"
+    },
+    "correction_tier1": {
+      "pattern": "^(no|nope)\\b|\\bwrong\\b|\\bthat'?s not\\b|\\bnot what i\\b|\\bi said\\b|\\bi'?m saying\\b|\\bi meant\\b|\\bwhy are you\\b|\\byou just\\b|\\bi did ?n'?o?t\\b|\\bdid ?n'?o?t ask\\b|\\bi told you\\b"
+    },
+    "correction_tier2": {
+      "pattern": "\\b(again|as i said|i already|this is the (second|third|fourth) time)\\b"
+    },
+    "evidence": {
+      "pattern": "^(===|---|\\+\\+\\+|ok\\s|fail\\b|pass\\b)|\\bhere is the\\b|\\bhere'?s the\\b|\\bpasted below\\b"
+    },
+    "expansion_constraint": {
+      "pattern": "\\b(from now on i|i will always|going forward i)\\b"
+    },
+    "expansion_scope": {
+      "pattern": "\\b(i also (updated|changed|modified|edited|touched|documented|refactored)|also updated|while i was (at it|there)|took the liberty)\\b"
+    },
+    "expansion_task": {
+      "pattern": "\\b(i (also )?(opened|created|filed|started) (a |an |the )?(issue|pr|ticket|follow[ -]?up|task)|i went ahead|i fixed the first)\\b"
+    },
+    "expansion_validation": {
+      "pattern": "\\b(i (also )?added (a |an |the )?(validation|check|assertion|test)|added a validation|is asserted)\\b"
+    },
+    "forward": {
+      "pattern": "^(add|implement|write|create|build|run|fix|refactor|document|commit|remove|delete|update|open|read|check|test|measure|record|wire|rename|move|extract|generate|install|set|find|list|paste|show|give|tell|point|switch|split|merge|bump|tag|push|pull|profile|benchmark)\\b"
+    },
+    "meta": {
+      "pattern": "\\b(from now on|going forward|next time|in future)\\b"
+    },
+    "negative": {
+      "pattern": "\\b(do not|don'?t|never|avoid|no more)\\b"
+    },
+    "new_task_line": {
+      "pattern": "^(new task|next task|next up|task:|now do|then do)\\b"
+    },
+    "path_token": {
+      "pattern": "\\b[\\w.-]*/[\\w./-]+\\b|\\b[\\w-]+\\.[a-z]{1,5}\\b",
+      "case_sensitive": true
+    },
+    "pointer_alias": {
+      "pattern": "\\b(that|the same|this|those|the one)\\s+[a-z][\\w-]*"
+    },
+    "pointer_file": {
+      "pattern": "\\b([\\w.-]+/[\\w./-]+|[\\w-]+\\.(go|md|ya?ml|json|ts|js|py|toml|txt|csv|sh))\\b"
+    },
+    "pointer_namespace": {
+      "pattern": "\\b([A-Z]{2,}-\\d+|[Mm]\\d+[a-z]?|v\\d+(\\.\\d+)+)\\b",
+      "case_sensitive": true
+    },
+    "pointer_operation": {
+      "pattern": "\\b(after ci|before merge|on push|at release|after the merge)\\b"
+    },
+    "pointer_quote": {
+      "pattern": "`[^`]+`",
+      "case_sensitive": true
+    },
+    "pointer_task": {
+      "pattern": "\\b(task \\d+|issue #?\\d+|pr \\d+|step \\d+|#\\d+)\\b"
+    },
+    "positive": {
+      "pattern": "\\b(always|make sure|ensure|keep|preserve|must|verify|wait for)\\b"
+    },
+    "reconstruction": {
+      "pattern": "\\b(to recap|restating|as i said before|where we left off|here is where we are)\\b"
+    },
+    "referent": {
+      "pattern": "\\b(i mean|to be clear|the one i|as in|by that i mean)\\b"
+    },
+    "release": {
+      "pattern": "\\bnever ?mind\\b|\\bdisregard\\b|\\bscratch that\\b|\\bforget (that|about|it)\\b|\\bignore what i said\\b|\\byou (can|may|should) (now )?(drop|stop|ignore|forget|skip)\\b|\\bno longer (applies|needed|necessary|required|relevant|matters)\\b|\\b(drop|lift|cancel|withdraw) (that|the|this) (rule|constraint|requirement|restriction|scope|limit)\\b|\\b(that|this) (rule|constraint|requirement|restriction) (is|no longer) (lifted|gone|off|applies)\\b"
+    },
+    "repair_verb": {
+      "pattern": "\\b(reverted|removed|restored|undid|undone|closed|deleted|rolled back|put back|unchanged|back to)\\b"
+    },
+    "reset": {
+      "pattern": "\\b(context clear|clear context|model switch|new chat)\\b|\\bhand(ing)? (this|it|things|the session|the work) off to (a |another )?new (session|context|agent)\\b|\\b(start|open|spin up|move to|switch to|hand off to)( a| another)? new session\\b"
+    },
+    "scope": {
+      "pattern": "(^|[^\\w-])only\\b|\\b(in scope|out of scope|scope|limited to|nothing else|just the|do not touch)\\b"
+    },
+    "second_person": {
+      "pattern": "\\b(you|your|yours|yourself)\\b"
+    },
+    "stop": {
+      "pattern": "^stop\\b|\\bstop\\s*[.!]|\\b(you must stop|stop after|stop here|hard stop|nothing else|wait for me|wait for instructions|do not perform (any )?follow[ -]?up|no follow[ -]?up)\\b"
+    },
+    "temporal": {
+      "pattern": "\\b(earlier|previously|previous|before that|the last one|you just)\\b"
+    }
+  },
+  "parameters": {
+    "bulk_paste_lines": 40,
+    "near_repeat_threshold": 0.8,
+    "release_coverage": 0.5,
+    "release_shared_tokens": 2,
+    "min_obligation_chars": 8
+  },
+  "discriminators": {
+    "subject_before_marker": true,
+    "second_person": true,
+    "contained": true,
+    "code_density": false
+  }
+}

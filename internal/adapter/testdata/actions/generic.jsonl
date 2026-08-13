@@ -1,0 +1,5 @@
+{"stream_id":"conformance","turn_id":"u1","speaker":"user","timestamp":"2026-08-13T10:00:00Z","text":"fix the worker"}
+{"stream_id":"conformance","turn_id":"a1","speaker":"assistant","timestamp":"2026-08-13T10:00:01Z","text":"Reading it.","root":"/home/op/proj","actions":[{"verb":"read","targets":["/home/op/proj/internal/worker.go"]},{"verb":"search","targets":["/home/op/proj/internal"]}]}
+{"stream_id":"conformance","turn_id":"u2","speaker":"tool","timestamp":"2026-08-13T10:00:02Z","text":"package worker\nno matches"}
+{"stream_id":"conformance","turn_id":"a2","speaker":"assistant","timestamp":"2026-08-13T10:00:03Z","text":"","root":"/home/op/proj","actions":[{"verb":"write","targets":["/home/op/proj/internal/worker.go"]},{"verb":"execute","argv":["go test ./internal/worker"],"failed":true},{"verb":"write","targets":["/tmp/scratch.txt"]},{"verb":"nosuchverb"}]}
+{"stream_id":"conformance","turn_id":"u3","speaker":"tool","timestamp":"2026-08-13T10:00:04Z","text":"FAIL"}

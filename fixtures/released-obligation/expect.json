@@ -1,0 +1,14 @@
+{
+  "records": 14,
+  "human_turns": 7,
+  "epochs": 1,
+  "corrections": 0,
+  "repair_episodes": 0,
+  "max_repair_depth": 0,
+  "min_obligation_release_events": 1,
+  "min_obligation_revival_events": 1,
+  "min_inventory_decreases": 1,
+  "regimes_seen": ["FLOW"],
+  "regimes_absent": ["DRIFT", "RECOVERY", "THRASH", "RESET"],
+  "final_regime": "FLOW"
+}
