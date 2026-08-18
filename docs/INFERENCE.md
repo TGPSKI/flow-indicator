@@ -30,8 +30,8 @@ configured one, whatever it is.
 | suitable for `watch` | in `hybrid`, yes | the deadline is 200 ms by default; a remote round trip will mostly miss it |
 | suitable for `replay` | yes | yes, at one request per eligible turn |
 
-There is no batching, no retry and no fallback endpoint. One turn, one request,
-one answer or one recorded failure.
+Session classification has no batching, retry or fallback endpoint. One
+eligible turn produces one request, one answer or one recorded failure.
 
 ## Modes
 
@@ -254,8 +254,10 @@ coverage and operational report separately from accuracy scores.
 `annotate` is the other model-backed command and a different job: it fills in
 label candidates for a corpus rather than classifying a session. It takes its
 own `--endpoint` and `--model`, runs two passes per family under differing
-instructions, and names the model in every file it writes. A model judgement is
-a candidate an adjudicator accepts or rejects, never ground truth. See
+instructions, and names the model in every file it writes. It sends up to 25
+units per request. A failed batch is retried once; a reply truncated by the token
+limit is split recursively, down to one unit. A model judgement is a candidate
+an adjudicator accepts or rejects, never ground truth. See
 [COMMANDS.md](COMMANDS.md#annotate).
 
 ## Choosing

@@ -97,16 +97,7 @@ func currentSession(only string, args []string) (harness.Session, error) {
 		return harness.Session{}, fmt.Errorf("watch: read working directory: %w", err)
 	}
 
-	found, errs := harness.DiscoverAll()
-	if only != "" {
-		kept := found[:0]
-		for _, s := range found {
-			if s.Harness == only {
-				kept = append(kept, s)
-			}
-		}
-		found = kept
-	}
+	found, errs := discoverSessions(only)
 
 	chosen, err := selectCurrent(dir, found)
 	if err != nil {

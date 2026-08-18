@@ -49,6 +49,25 @@ func TestEveryListedCommandHasHelp(t *testing.T) {
 	}
 }
 
+// A detail page is the terminal contract for one command. A flag accepted by
+// the parser but absent here cannot be discovered without reading source.
+func TestCommonFlagsAppearOnEveryCommandThatAcceptsThem(t *testing.T) {
+	for _, command := range []string{"replay", "replay-set", "watch", "report", "inspect", "calibrate"} {
+		for _, flag := range []string{"--config", "--data-dir", "--profile"} {
+			if !strings.Contains(commandHelp[command], flag) {
+				t.Errorf("help %s omits %s", command, flag)
+			}
+		}
+	}
+}
+
+func TestCalibrateHelpNamesClassifierModes(t *testing.T) {
+	text := commandHelp["calibrate"]
+	if !strings.Contains(text, "--classifier <mode>") || strings.Contains(text, "--classifier <path>") {
+		t.Errorf("calibrate help does not describe --classifier as a mode:\n%s", text)
+	}
+}
+
 // commandsInUsage reads the command names out of the front page's command list.
 func commandsInUsage(t *testing.T) []string {
 	t.Helper()

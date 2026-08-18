@@ -10,11 +10,14 @@ crosses it, and what happens when the other side is absent.
 | herdr | read + one display write | no | [HERDR.md](HERDR.md) |
 | instance records | write, then read back | no | [Instance records](#instance-records) |
 | session directory | write | yes | [Session artifacts](#session-artifacts) |
+| corpus, labels and replay-set outputs | write | only for those commands | [Selected output paths](#selected-output-paths) |
 | OpenAI-compatible endpoint | write turn text, read verdict | no | [INFERENCE.md](INFERENCE.md) |
 
-There is no telemetry, no update check and no daemon. Network traffic goes only
-to endpoints an operator names: the configured classifier endpoint, and
-`annotate --endpoint`, which is a separate destination with its own flag.
+There is no telemetry, no update check and no daemon. Model requests start at
+endpoints an operator names: the configured classifier endpoint, and `annotate
+--endpoint`, which is a separate destination with its own flag. The clients use
+Go's default redirect policy; a 307 or 308 response can resend a request body to
+the redirect target.
 
 ## Harnesses
 
@@ -35,6 +38,11 @@ Discovery reads the working directory the source itself records, not the encoded
 project directory name. Sub-agent transcripts are skipped: claude-code marks
 them in-stream, codex writes them as sibling files, qwen puts them under a
 sibling `subagents/` directory.
+
+`sessions`, `watch --current` and `watch --last` search all four agent harnesses
+unless `--adapter` selects one before discovery. `watch --pane` reads only the
+harness mapped from the pane's agent. A named path opens only that path; pass
+`--adapter` when its harness differs from the command default.
 
 The file-backed harnesses hold a partial final record until its newline arrives
 and never write to the file they follow. opencode has no file to tail — its
@@ -144,7 +152,7 @@ accident.
 
 ## Session artifacts
 
-Everything a run produces lands under
+Every `watch` or `replay` session artifact lands under
 `$XDG_DATA_HOME/flow-indicator/sessions/<stream-id>/`. The five `.jsonl` files
 are append-only and are the source of truth; the rest is disposable and rebuilt
 from them.
@@ -158,9 +166,17 @@ from them.
 | `timeline.csv` | one row per turn, for a spreadsheet or plot |
 | `source.json` | source path, byte offset, record count |
 
-`replay-set` writes its own two files outside the session directories: one JSONL
-row per session, and a second file of anchors — source path, sequence number and
-byte offset — that drill back to source through `inspect`.
+## Selected output paths
+
+Three commands write outside the data directory only when the operator names a
+destination:
+
+- `corpus --build --out <dir>` writes a manifest and, with `--copy`, transcript
+  copies under that directory;
+- `annotate --out <dir>` writes candidate label files under that directory;
+- `replay-set --output <file> --anchors <file>` writes one JSONL row per session
+  and source anchors. Without `--anchors`, the anchor path is derived beside
+  `--output`.
 
 Session, instance and corpus files are created 0600 under 0700 directories.
 `replay-set` and `annotate` write their outputs under the process umask. Stored text defaults to a

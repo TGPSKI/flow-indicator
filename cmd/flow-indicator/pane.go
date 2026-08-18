@@ -253,7 +253,7 @@ func paneSession(target string) (harness.Session, error) {
 	if err != nil {
 		return harness.Session{}, err
 	}
-	found, errs := harness.DiscoverAll()
+	found, errs := harness.DiscoverOnly(harnessName)
 	s, err := findSessionByID(found, harnessName, id)
 	if err != nil {
 		// The pane names a session the store has not seen: a just-started

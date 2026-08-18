@@ -154,7 +154,7 @@ a restart. See [HERDR.md](HERDR.md).
 | `--stream-id <id>` | harness id | override the stream identifier |
 | `--force` | `false` | replace an existing session directory |
 
-**Where it starts.** A session discovery chose is replayed from its beginning to
+**Where it starts.** A session chosen through discovery is replayed from its beginning to
 build state — about 0.2 s on a 6.5 MB session, 0.4 s on 20 MB — because a meter
 that starts halfway through shows a regime derived from a fragment. Bootstrap
 reads the source and never writes to it. A bare *path* starts at the end

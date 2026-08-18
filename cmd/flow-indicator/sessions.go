@@ -62,7 +62,12 @@ func sessionsCmd(args []string) error {
 		return err
 	}
 
-	found, errs := harness.DiscoverAll()
+	if *harnessName != "" {
+		if _, err := harness.New(*harnessName); err != nil {
+			return err
+		}
+	}
+	found, errs := discoverSessions(*harnessName)
 	found = filterSessions(found, *harnessName, *here)
 	if len(found) == 0 {
 		fmt.Println("no sessions found")
@@ -121,6 +126,16 @@ func filterSessions(in []harness.Session, harnessName string, here bool) []harne
 		out = append(out, s)
 	}
 	return out
+}
+
+// discoverSessions narrows the read before discovery starts when only is set.
+// Filtering DiscoverAll afterward would already have opened every store and
+// invoked sqlite3 for opencode.
+func discoverSessions(only string) ([]harness.Session, map[string]error) {
+	if only != "" {
+		return harness.DiscoverOnly(only)
+	}
+	return harness.DiscoverAll()
 }
 
 // printSessions writes the listing as a table.
@@ -249,16 +264,7 @@ func resolveSession(arg, harnessName string, explicit bool) (harness.Session, er
 	// Anything that names a place on disk is taken at its word. Discovery is
 	// for identifiers, and a path is not an identifier.
 	if strings.Contains(arg, "#") || strings.ContainsRune(arg, filepath.Separator) || fileExists(arg) {
-		s := harness.Session{Harness: harnessName, Locator: arg, ID: harness.IDOf(arg)}
-		// A rollout handed to the claude-code decoder yields nothing and says
-		// nothing about why. If the operator did not name a harness and the
-		// path is one discovery already knows, the harness is known too.
-		if !explicit {
-			if known, ok := sessionAtPath(arg); ok {
-				s = known
-			}
-		}
-		return s, nil
+		return harness.Session{Harness: harnessName, Locator: arg, ID: harness.IDOf(arg)}, nil
 	}
 
 	// An identifier already names exactly one session across every harness, so
@@ -269,7 +275,7 @@ func resolveSession(arg, harnessName string, explicit bool) (harness.Session, er
 	if explicit {
 		only = harnessName
 	}
-	found, errs := harness.DiscoverAll()
+	found, errs := discoverSessions(only)
 	candidates := filterSessions(found, only, false)
 	var matches []harness.Session
 	for _, s := range candidates {
@@ -306,22 +312,6 @@ func resolveSession(arg, harnessName string, explicit bool) (harness.Session, er
 	return harness.Session{}, errors.New(strings.TrimRight(b.String(), "\n"))
 }
 
-// sessionAtPath reports the discovered session a path names, if discovery has
-// seen it. It is how a named transcript learns which harness wrote it.
-func sessionAtPath(arg string) (harness.Session, bool) {
-	abs, err := filepath.Abs(arg)
-	if err != nil {
-		return harness.Session{}, false
-	}
-	found, _ := harness.DiscoverAll()
-	for _, s := range found {
-		if s.Locator == abs || s.Locator == arg {
-			return s, true
-		}
-	}
-	return harness.Session{}, false
-}
-
 // announce prints the session that was chosen and returns the byte to start at.
 //
 // Saying which session is being measured is not decoration: discovery picked it,
@@ -343,7 +333,7 @@ func announce(s harness.Session, tailOnly bool) int64 {
 // It is what "watch what I am doing" means when the shell is not sitting in the
 // project directory, which inside a pane it usually is not.
 func lastSession(harnessName string) (harness.Session, error) {
-	found, errs := harness.DiscoverAll()
+	found, errs := discoverSessions(harnessName)
 	found = filterSessions(found, harnessName, false)
 	if len(found) == 0 {
 		return harness.Session{}, fmt.Errorf("watch: no sessions found%s", noteSuffix(errs))

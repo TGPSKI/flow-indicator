@@ -117,14 +117,30 @@ func Names() []string {
 
 // DiscoverAll enumerates every registered harness's sessions from its default
 // root.
-//
-// A harness whose root does not exist contributes nothing and no error: an
-// operator who uses one of the three has not misconfigured the other two.
 func DiscoverAll() ([]Session, map[string]error) {
+	return discoverDefaults(Names())
+}
+
+// DiscoverOnly enumerates one registered harness's sessions from its default
+// root. Selecting a harness must narrow the read before discovery starts: an
+// opencode result filter applied after DiscoverAll would already have invoked
+// sqlite3 and read every other harness store.
+func DiscoverOnly(name string) ([]Session, map[string]error) {
+	return discoverDefaults([]string{name})
+}
+
+// discoverDefaults enumerates only the named harnesses. A root that does not
+// exist contributes nothing and no error: not having used a selected harness is
+// not a configuration failure.
+func discoverDefaults(names []string) ([]Session, map[string]error) {
 	var out []Session
 	errs := map[string]error{}
-	for _, name := range Names() {
-		h := registry[name]
+	for _, name := range names {
+		h, ok := registry[name]
+		if !ok {
+			errs[name] = fmt.Errorf("harness: unknown harness %q: want one of %v", name, Names())
+			continue
+		}
 		root, err := h.DefaultRoot()
 		if err != nil {
 			errs[name] = err

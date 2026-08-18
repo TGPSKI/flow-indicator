@@ -210,6 +210,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `--adapter` now constrains discovery before any harness store is read. It no
+  longer enumerates every harness and filters afterward, so selecting a
+  file-backed harness cannot invoke `sqlite3`. Pane resolution reads only the
+  pane's mapped harness, and a named path no longer scans stores to infer its
+  format.
+
+- Per-command help now lists the common `--config`, `--data-dir` and `--profile`
+  flags on all six commands that accept them. `calibrate --classifier` is shown
+  as the `heuristic|configured` mode selector, not a path.
+
 - The labeler no longer hides two endpoint failures. A reply cut off at the
   token limit parsed as malformed JSON, was retried identically, and was then
   abandoned 25 units at a time behind a count nobody reconciled. `finish_reason`

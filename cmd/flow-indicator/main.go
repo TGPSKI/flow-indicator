@@ -133,6 +133,9 @@ Bootstrap reads the source and never writes to it: about 0.2 s on a
   --force           replace an existing session directory
   --herdr-pane <id> also push the phase into this herdr pane's
                     sidebar as metadata tokens, with a TTL
+  --config <path>   configuration file
+  --data-dir <path> storage root
+  --profile <path>  marker lexicon overlay
 
 A --pane watch is keyed to the pane, not to the session it first
 resolved: it re-resolves every five seconds and follows the new
@@ -177,10 +180,16 @@ session per task cannot fill the page.
                       for strict replay
   --force             replace an existing session directory
   --quiet             write files without the summary line
+  --config <path>     configuration file
+  --data-dir <path>   storage root
+  --profile <path>    marker lexicon overlay
 `,
 	"report": `flow-indicator report — print the stored report for a session.
 
   --session <stream-id>   the session to report on
+  --config <path>         configuration file
+  --data-dir <path>       storage root
+  --profile <path>        marker lexicon overlay
 `,
 	"inspect": `flow-indicator inspect — draw the meter as it stood at one turn.
 
@@ -189,6 +198,9 @@ session per task cannot fill the page.
   --micro                 draw the side-pane meter, not the audit view
   --no-color              no ANSI attributes
   --width <n>             inner width in columns, with --micro
+  --config <path>         configuration file
+  --data-dir <path>       storage root
+  --profile <path>        marker lexicon overlay
 `,
 	"replay-set": `flow-indicator replay-set — replay a manifest into one table.
 
@@ -196,6 +208,9 @@ session per task cannot fill the page.
   --output <file>     where the rows are written
   --anchors <file>    where regime anchors are written
   --adapter <name>    harness that wrote the sources
+  --config <path>     configuration file
+  --data-dir <path>   storage root
+  --profile <path>    marker lexicon overlay
 `,
 	"corpus": `flow-indicator corpus — survey sessions and seal a corpus.
 
@@ -260,9 +275,12 @@ because a score that cannot name its own subject is not evidence.
   --labels <dir>        the label files
   --manifest <file>     the sealed corpus
   --split dev|holdout   which side to score (default dev)
-  --classifier <path>   heuristic or configured (default heuristic)
+  --classifier <mode>   heuristic or configured (default heuristic)
   --reason <text>       why the holdout is opened; required for it
   --json                write the run record as JSON
+  --config <path>       configuration file
+  --data-dir <path>     storage root
+  --profile <path>      marker lexicon overlay
 `,
 }
 
@@ -704,7 +722,7 @@ func watch(args []string) error {
 		only = *adapterName
 	}
 
-	// A session discovery chose is announced and replayed from its beginning: a
+	// A session chosen through discovery is announced and replayed from its beginning: a
 	// pane that starts halfway through a conversation with no history shows a
 	// regime derived from a fragment. That is bootstrap, not analysis — the
 	// source is read, never copied and never written to. A bare path keeps the

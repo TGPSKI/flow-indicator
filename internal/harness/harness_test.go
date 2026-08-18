@@ -8,6 +8,40 @@ import (
 	"github.com/TGPSKI/flow-indicator/internal/stream"
 )
 
+type countingHarness struct {
+	name        string
+	discoveries *int
+}
+
+func (h countingHarness) Name() string                 { return h.name }
+func (h countingHarness) DefaultRoot() (string, error) { return "/sessions", nil }
+func (h countingHarness) Discover(string) ([]Session, error) {
+	(*h.discoveries)++
+	return []Session{{ID: h.name}}, nil
+}
+func (h countingHarness) Open(Session) ([]stream.Record, error) { return nil, nil }
+
+// A selected harness constrains the read surface. Filtering the results of a
+// full discovery would still open every other store and invoke its subprocesses.
+func TestDiscoverOnlyDoesNotReadOtherHarnesses(t *testing.T) {
+	var selected, excluded int
+	registry["test-selected"] = countingHarness{name: "test-selected", discoveries: &selected}
+	registry["test-excluded"] = countingHarness{name: "test-excluded", discoveries: &excluded}
+	defer delete(registry, "test-selected")
+	defer delete(registry, "test-excluded")
+
+	got, errs := DiscoverOnly("test-selected")
+	if len(errs) != 0 {
+		t.Fatalf("discovery errors = %v", errs)
+	}
+	if selected != 1 || excluded != 0 {
+		t.Fatalf("discoveries: selected=%d excluded=%d, want 1 and 0", selected, excluded)
+	}
+	if len(got) != 1 || got[0].Harness != "test-selected" {
+		t.Fatalf("sessions = %+v, want one session licensed to test-selected", got)
+	}
+}
+
 // Every harness owes the same contract, and no fixture proves it. The contract
 // is about live stores: that operator turns come out as operator turns, that
 // actions land in the closed verb vocabulary, and that nothing a harness cannot

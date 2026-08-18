@@ -394,9 +394,10 @@ adjudicator accepts or rejects, and each file names the model that produced it,
 so a score can say what judged the corpus. A pass that collapses to one class is
 called out as measuring nothing.
 
-The corpus references sessions where they lie and seals them by hash; nothing is
-copied. The split is a function of each session's identifier, stratified by
-project, so nobody chooses which sessions the holdout gets.
+By default the corpus references sessions where they lie and seals them by hash;
+`corpus --copy` copies them under the output directory instead. The split is a
+function of each session's identifier, stratified by project, so nobody chooses
+which sessions the holdout gets.
 
 Every run prints the artifact, corpus manifest, rule and label-set hashes it ran
 under, and every score is printed with its operator-facing consequence beside it

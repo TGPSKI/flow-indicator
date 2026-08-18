@@ -118,6 +118,19 @@ func TestNamedPathIsNotResolvedAsAnIdentifier(t *testing.T) {
 	}
 }
 
+// A path names the only source discovery may read. Without --adapter it uses
+// the command default; inferring a harness by scanning every store would violate
+// the named-source boundary before decoding began.
+func TestNamedPathWithoutAdapterDoesNotTriggerDiscovery(t *testing.T) {
+	got, err := resolveSession("/no/such/session.jsonl", "claude-code", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Harness != "claude-code" || got.Locator != "/no/such/session.jsonl" {
+		t.Fatalf("resolved path = %+v, want the named path under the default harness", got)
+	}
+}
+
 // An identifier that names nothing has to say what to do next, because the
 // operator has no other way to find out what identifiers exist.
 func TestUnknownIdentifierPointsAtTheListing(t *testing.T) {

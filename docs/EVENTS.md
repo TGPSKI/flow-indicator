@@ -143,8 +143,8 @@ At a real source end, `Projector.Finish` emits the outstanding `repair_status`,
 `semantic_classification_completed` is outside the per-record pipeline because
 the local worker finishes after the source reader has continued. Its identity
 includes the classifier and immutable input hash, so two semantic attempts for
-one source sequence remain separate append-only facts. A future strict replay
-may select one; the live projector never mutates past state from its arrival.
+one source sequence remain separate append-only facts. Strict replay can select
+one; the live projector never mutates past state from its arrival.
 
 `summary.json` and `report.md` project retained semantic completions into a
 separate operational section. Their completion counts and latency percentiles
