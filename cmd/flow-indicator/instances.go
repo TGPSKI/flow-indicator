@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/TGPSKI/flow-indicator/internal/config"
@@ -220,6 +221,13 @@ func instanceLive(r instanceReport, host string, now time.Time) bool {
 	if r.Hostname != host || r.PID < 1 || r.ReportedAt.IsZero() || now.After(r.ExpiresAt) {
 		return false
 	}
-	_, err := os.Stat(filepath.Join("/proc", fmt.Sprintf("%d", r.PID)))
-	return err == nil
+	process, err := os.FindProcess(r.PID)
+	if err != nil {
+		return false
+	}
+	// Signal 0 checks that the process exists without delivering a signal. EPERM
+	// also proves existence: the process is live even when this user cannot probe
+	// it further.
+	err = process.Signal(syscall.Signal(0))
+	return err == nil || errors.Is(err, os.ErrPermission)
 }

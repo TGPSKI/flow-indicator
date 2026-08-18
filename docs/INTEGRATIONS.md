@@ -135,8 +135,8 @@ flow-indicator instances --json
 Rules a consumer can rely on:
 
 - **Liveness is probed, not trusted.** A record is returned only if its hostname
-  matches, its TTL has not expired, and `/proc/<pid>` exists. A record one TTL
-  past expiry is deleted on read.
+  matches, its TTL has not expired, and a signal-0 probe establishes that its
+  process exists. A record one TTL past expiry is deleted on read.
 - **Empty is a fact.** `items` is `[]`, never `null`, when no watch is live.
   That is a successful observation that nothing is running, not a stopped
   interaction.

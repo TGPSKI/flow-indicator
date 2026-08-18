@@ -379,6 +379,9 @@ func TestReplaySemanticSessionRefusesIncompleteCoverage(t *testing.T) {
 }
 
 func TestInstancesListsOnlyLiveOperationalRecords(t *testing.T) {
+	if !processLive(os.Getpid()) {
+		t.Fatal("current process reported dead")
+	}
 	empty, err := liveInstances(t.TempDir(), time.Now().UTC())
 	if err != nil || empty == nil || len(empty) != 0 {
 		t.Fatalf("empty instances = %#v, %v", empty, err)
@@ -405,6 +408,17 @@ func TestInstancesListsOnlyLiveOperationalRecords(t *testing.T) {
 	if instanceLive(items[0], items[0].Hostname, time.Now().UTC()) {
 		t.Fatal("expired instance reported live")
 	}
+}
+
+func processLive(pid int) bool {
+	host, err := os.Hostname()
+	if err != nil {
+		return false
+	}
+	now := time.Now().UTC()
+	return instanceLive(instanceReport{
+		Hostname: host, PID: pid, ReportedAt: now, ExpiresAt: now.Add(instanceTTL),
+	}, host, now)
 }
 
 // An existing session is not appended to twice: the event files are the source

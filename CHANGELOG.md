@@ -214,6 +214,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Live instance discovery now probes a PID with signal 0 instead of reading
+  `/proc/<pid>`. macOS has no `/proc`, so every live watch there was excluded
+  from `instances --json` despite a current TTL and matching hostname.
+
 - `--adapter` now constrains discovery before any harness store is read. It no
   longer enumerates every harness and filters afterward, so selecting a
   file-backed harness cannot invoke `sqlite3`. Pane resolution reads only the
