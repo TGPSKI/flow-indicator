@@ -257,6 +257,10 @@ some_stream | ./flow-indicator watch --adapter generic
 `--full` draws the audit view instead: one screen with every metric family and
 its evidence class.
 
+![FLOW audit view](docs/example-full-1.png)
+
+![DRIFT audit view](docs/example-full.png)
+
 ```text
 ┌─ flow-indicator ─────────────────────────────────────────────┐
 │ session recent-thrash   turn 23   regime RECOVERY            │

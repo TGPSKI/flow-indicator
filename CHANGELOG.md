@@ -5,7 +5,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-17
+
 ### Added
+
+- FLOW and DRIFT audit-view screenshots in the README.
 
 - `docs/COMMANDS.md`, `docs/HERDR.md`, `docs/INTEGRATIONS.md`,
   `docs/PROFILES.md` and `docs/INFERENCE.md`. `docs/LOCAL_MODELS.md` is rolled
