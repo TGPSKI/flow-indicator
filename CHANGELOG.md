@@ -5,6 +5,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `watch --herdr-workspace <id|auto>`: push the meter's four tokens onto a
+  workspace's space row through `herdr workspace report-metadata`. herdr draws
+  a pane's sidebar row only for panes it has promoted to agents, so a meter
+  watching an unpromoted pane pushed tokens no row would ever render; the
+  space row exists for every workspace.
+
+- `auto` on both reporter flags. `--herdr-pane auto` reuses `--pane auto`
+  discovery — the agent pane sharing this pane's tab, widening to its
+  workspace, two candidates an error naming each — and `--herdr-workspace
+  auto` is the workspace this process runs in, from `HERDR_WORKSPACE_ID` with
+  `herdr pane current` as the fallback.
+
+- `docs/HERDR.md`: the sidebar row config that renders the tokens. herdr
+  displays a custom token only where `[ui.sidebar]` rows name it, and its
+  default rows name none, so pushes landed in the daemon and drew nothing
+  until that block existed.
+
+### Fixed
+
+- Sidebar pushes after a meter restart were silently dropped. herdr keeps each
+  source's report `--seq` as a high-water mark that outlives the reporting
+  process, and the reporter's counter restarted at 1. Seq is now wall-clock
+  nanoseconds, the scheme herdr's own hook integrations use.
+
 ## [0.3.0] - 2026-08-17
 
 ### Added

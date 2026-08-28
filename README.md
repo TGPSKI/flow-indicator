@@ -177,19 +177,26 @@ failed: the meter prints what it is waiting for and locks on when the
 report lands. Only a pane that cannot be followed at all — no such pane,
 ambiguity, a missing command — exits.
 
-The meter does not need a pane of its own. `--herdr-pane <id>` pushes four
+The meter does not need a pane of its own. `--herdr-pane <id|auto>` pushes four
 display tokens — phase, turn, elapsed, trend — into that pane's herdr sidebar
-row, each carrying a 30-second TTL refreshed every 10 seconds:
+row, each carrying a 30-second TTL refreshed every 10 seconds. herdr draws that
+row only for a pane it has promoted to an agent; `--herdr-workspace <id|auto>`
+pushes the same tokens onto a workspace's space row, which every workspace has.
+`auto` is the agent pane sharing this tab for the pane form, and this process's
+own workspace for the workspace form:
 
 ```bash
-flow-indicator watch --pane auto --herdr-pane w1W:p1
+flow-indicator watch --pane auto --herdr-pane auto
+flow-indicator watch --current --herdr-workspace auto
 ```
 
 The push is one bounded subprocess that never blocks the draw loop, and a failed
 push is ignored: herdr may not be running, and a meter that cannot draw a
 sidebar row is still a meter. If this process dies the row expires rather than
 showing a phase that stopped being true. It reads no herdr state, changes no
-pane, and touches no server lifecycle.
+pane, and touches no server lifecycle. The tokens render only where herdr's
+sidebar config names them; the one config block that is needed is in
+[docs/HERDR.md](docs/HERDR.md).
 
 Pane resolution, restart following, the token contract and the layouts are in
 [docs/HERDR.md](docs/HERDR.md).

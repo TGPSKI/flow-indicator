@@ -7,16 +7,20 @@ the meter:
 | flag | direction | herdr command |
 |---|---|---|
 | `watch --pane <id\|auto>` | read | `herdr agent list`, `herdr pane current` |
-| `watch --herdr-pane <id>` | write | `herdr pane report-metadata` |
+| `watch --herdr-pane <id\|auto>` | write | `herdr pane report-metadata` |
+| `watch --herdr-workspace <id\|auto>` | write | `herdr workspace report-metadata` |
 
 The read side answers "which session is this pane running". The write side puts
-four display tokens in that pane's sidebar row. They are independent: either can
-be used alone, and `--pane auto --herdr-pane <id>` uses both.
+four display tokens in a sidebar row — a pane's agents-panel row, or a
+workspace's space row. Reads and writes are independent: either can be used
+alone, and `--pane auto --herdr-pane auto` uses both. The two write flags name
+one row each; passing both is an error.
 
 Without herdr, `watch --current`, `watch --last` and `watch <session-id>` work
-unchanged. `--pane` requires the `herdr` command on `PATH`; `--herdr-pane` does not, and a
-missing command means the sidebar row never appears. `--pane`
-additionally requires the daemon to be answering.
+unchanged. `--pane` requires the `herdr` command on `PATH`; an explicit
+`--herdr-pane` / `--herdr-workspace` id does not, and a missing command means
+the sidebar row never appears. `auto` on any flag resolves through the command,
+so it needs `PATH` and the daemon answering, as `--pane` does.
 
 ## Why pane instead of directory
 
@@ -99,14 +103,28 @@ agent exiting and its replacement starting looks exactly like a quiet pane from
 outside, so only a new id acts. `--tail-only` applies to the first session only;
 a session that appears mid-watch is new and is replayed whole.
 
-## `--herdr-pane`: the sidebar row
+## `--herdr-pane`, `--herdr-workspace`: the sidebar row
 
 The meter does not need a pane of its own. `--herdr-pane` pushes the phase into
-another pane's herdr sidebar row:
+another pane's herdr sidebar row, and `--herdr-workspace` into a workspace's
+space row:
 
 ```bash
 flow-indicator watch --pane auto --herdr-pane w2E:p1
+flow-indicator watch --current --herdr-workspace auto
 ```
+
+Which row to target: herdr draws an agents-panel row only for a pane it has
+promoted to an agent — one with an `agent` in `herdr agent list`. Tokens pushed
+to an unpromoted pane land in the daemon and are never rendered. The space row
+exists for every workspace, promoted agent or not, so `--herdr-workspace` is
+the target when the watched agent has no herdr lifecycle integration.
+
+`auto` resolves against the herdr this process runs inside. The pane form
+reuses `--pane auto` discovery — the agent pane sharing this pane's tab,
+widening to its workspace; two candidates are an error naming each. The
+workspace form is this process's own workspace, from `HERDR_WORKSPACE_ID`, or
+`herdr pane current` when the variable is absent.
 
 Four tokens, and nothing else:
 
@@ -118,8 +136,32 @@ Four tokens, and nothing else:
 | `flow_trend` | the most recent band crossing, e.g. `F → D` |
 
 Each push is one `herdr pane report-metadata <pane> --source flow-indicator
---seq <n> --ttl-ms 30000` with a `--token name=value` per field. An empty field
-is pushed as `--clear-token`, so a row never keeps a value that stopped holding.
+--seq <n> --ttl-ms 30000` with a `--token name=value` per field — `workspace
+report-metadata <workspace>` for the workspace target. An empty field is pushed
+as `--clear-token`, so a row never keeps a value that stopped holding. `--seq`
+is wall-clock nanoseconds: herdr keeps each source's highest seq per target as
+a freshness mark that outlives the reporting process, and a counter restarting
+at 1 would leave every push after a meter restart silently dropped as stale.
+
+### The sidebar config that renders the tokens
+
+herdr renders a custom token only where its sidebar row config names it, and
+the default rows name none. Without this, pushes land in the daemon (visible
+through `herdr workspace get <id>`) and draw nothing. For the space row:
+
+```toml
+[ui.sidebar.spaces]
+rows = [
+  ["state_icon", "workspace"],
+  ["branch", "git_status"],
+  ["$flow_phase", "$flow_turn", "$flow_elapsed"],
+]
+```
+
+The first two rows restate herdr's defaults, because setting `rows` replaces
+them. A row renders only when one of its tokens resolves, so workspaces without
+a meter are unchanged. For a pane target the same `$flow_*` names go under
+`[ui.sidebar.agents]`. Applies on `herdr server reload-config`.
 
 Timing and failure:
 
@@ -155,6 +197,13 @@ pane on both flags:
 flow-indicator watch --pane w2E:p1 --herdr-pane w2E:p1
 ```
 
+**Agent herdr has not promoted.** No agents-panel row exists to draw on, so
+target the workspace's space row instead:
+
+```bash
+flow-indicator watch --adapter qwen --current --herdr-workspace auto
+```
+
 **Several agents, one repository.** Name each pane; `--current` cannot separate
 them.
 
@@ -168,8 +217,9 @@ flow-indicator watch --pane w2J:p1
 A `watch` on a discovered session writes one operational record per run, readable through
 `flow-indicator instances --json`. Two of its fields come from herdr:
 
-- `pane_id` is the `--herdr-pane` argument, not the `--pane` target: it names
-  the pane this meter is drawing into.
+- `pane_id` is the resolved `--herdr-pane` target, not the `--pane` target: it
+  names the pane this meter is drawing into, and is empty when the reporter
+  targets a workspace or is off.
 - `workspace_id` is read from the `HERDR_WORKSPACE_ID` environment variable,
   which herdr sets in the panes it owns.
 
