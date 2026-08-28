@@ -131,12 +131,15 @@ Bootstrap reads the source and never writes to it: about 0.2 s on a
   --offset <n>      with a named file, start at a byte offset
   --stream-id <id>  override the stream identifier
   --force           replace an existing session directory
-  --herdr-pane <id> also push the phase into this herdr pane's
+  --herdr-pane <id|auto>
+                    also push the phase into this herdr pane's
                     sidebar as metadata tokens, with a TTL; the
-                    row exists only for a promoted agent pane
-  --herdr-workspace <id>
+                    row exists only for a promoted agent pane.
+                    auto finds the agent pane sharing this tab
+  --herdr-workspace <id|auto>
                     push the same tokens onto a workspace's
-                    space row, which every workspace has
+                    space row, which every workspace has.
+                    auto is the workspace this process runs in
   --config <path>   configuration file
   --data-dir <path> storage root
   --profile <path>  marker lexicon overlay
@@ -673,8 +676,8 @@ func watch(args []string) error {
 	adapterName := fs.String("adapter", "claude-code", "adapter or harness name: "+strings.Join(harness.Names(), ", "))
 	sessionRoot := fs.String("root", "", "working directory action targets are made relative to, for sources that record none")
 	streamID := fs.String("stream-id", "", "override the stream identifier")
-	herdrPane := fs.String("herdr-pane", "", "report the phase into this herdr pane's sidebar row as metadata tokens")
-	herdrWorkspace := fs.String("herdr-workspace", "", "report the phase into this herdr workspace's space row as metadata tokens")
+	herdrPane := fs.String("herdr-pane", "", "report the phase into this herdr pane's sidebar row as metadata tokens; auto finds the agent pane sharing this tab")
+	herdrWorkspace := fs.String("herdr-workspace", "", "report the phase into this herdr workspace's space row as metadata tokens; auto is this process's workspace")
 	current := fs.Bool("current", false, "follow the session recorded for this working directory")
 	last := fs.Bool("last", false, "follow the most recently written session on this machine")
 	pane := fs.String("pane", "", "follow the agent session in this herdr pane; auto finds the agent pane sharing this pane's tab")
@@ -711,10 +714,11 @@ func watch(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if *herdrPane != "" && *herdrWorkspace != "" {
-		return fmt.Errorf("watch: --herdr-pane and --herdr-workspace name one sidebar row each; pass one")
+	herdrScope, herdrID, err := resolveHerdrTarget(*herdrPane, *herdrWorkspace)
+	if err != nil {
+		return err
 	}
-	view := display{micro: !*full, color: useColor(*noColor), width: *width, herdrPane: *herdrPane, herdrWorkspace: *herdrWorkspace}
+	view := display{micro: !*full, color: useColor(*noColor), width: *width, herdrScope: herdrScope, herdrID: herdrID}
 
 	// --adapter carries a default, so its value cannot say whether the operator
 	// chose it. Only a flag actually passed narrows a search or overrides an
@@ -841,21 +845,22 @@ type display struct {
 	micro bool
 	color bool
 	width int
-	// herdrPane names a pane whose sidebar row should carry the phase, and
-	// herdrWorkspace a workspace's space row; herdr draws a pane row only for
-	// a promoted agent, a space row for every workspace. At most one is set.
-	// Both empty means the meter draws only into its own terminal.
-	herdrPane      string
-	herdrWorkspace string
+	// herdrScope and herdrID name the sidebar row that should carry the
+	// phase, already resolved from --herdr-pane / --herdr-workspace; herdr
+	// draws a pane row only for a promoted agent, a space row for every
+	// workspace. An empty id means the meter draws only into its own
+	// terminal.
+	herdrScope string
+	herdrID    string
 }
 
-// herdrTarget is the reporter scope and id the display selects, or empty ids
-// when the meter reports nowhere.
-func (d display) herdrTarget() (scope, id string) {
-	if d.herdrWorkspace != "" {
-		return "workspace", d.herdrWorkspace
+// herdrPaneID is the pane the instance record names, when the reporter
+// targets one.
+func (d display) herdrPaneID() string {
+	if d.herdrScope == "pane" {
+		return d.herdrID
 	}
-	return "pane", d.herdrPane
+	return ""
 }
 
 // useColor honours --no-color and the NO_COLOR convention, and stays off when
@@ -899,7 +904,7 @@ func watchFile(ctx context.Context, cfg config.Config, root, harnessName string,
 		return err
 	}
 	defer session.Close()
-	emit, err := newInstanceEmitter(root, id, harnessName, abs, sessionRoot, view.herdrPane)
+	emit, err := newInstanceEmitter(root, id, harnessName, abs, sessionRoot, view.herdrPaneID())
 	if err != nil {
 		return err
 	}
@@ -936,8 +941,7 @@ func watchFile(ctx context.Context, cfg config.Config, root, harnessName string,
 	live := liveness{last: time.Now()}
 	moves := render.NewHighlights()
 
-	herdrScope, herdrID := view.herdrTarget()
-	herdr := newHerdrReporter(ctx, herdrScope, herdrID)
+	herdr := newHerdrReporter(ctx, view.herdrScope, view.herdrID)
 	defer herdr.Close()
 	var lastRow herdrRow
 	var lastPush time.Time

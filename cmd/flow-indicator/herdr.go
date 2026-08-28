@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"time"
 )
@@ -42,6 +44,58 @@ const (
 	// another program.
 	herdrTimeout = 3 * time.Second
 )
+
+// resolveHerdrTarget turns --herdr-pane and --herdr-workspace into the
+// reporter's scope and id. At most one may be set; both empty disables the
+// reporter. auto resolves against the herdr this process runs inside: the
+// pane form reuses pane discovery — the agent pane sharing this pane's tab,
+// widening to its workspace — and the workspace form is this process's own
+// workspace, from HERDR_WORKSPACE_ID or herdr pane current.
+func resolveHerdrTarget(pane, workspace string) (scope, id string, err error) {
+	if pane != "" && workspace != "" {
+		return "", "", errors.New("watch: --herdr-pane and --herdr-workspace name one sidebar row each; pass one")
+	}
+	switch {
+	case workspace == paneAuto:
+		if id := os.Getenv("HERDR_WORKSPACE_ID"); id != "" {
+			return "workspace", id, nil
+		}
+		raw, err := herdrQuery("pane", "current")
+		if err != nil {
+			return "", "", err
+		}
+		self, err := parseCurrentPane(raw)
+		if err != nil {
+			return "", "", err
+		}
+		return "workspace", self.WorkspaceID, nil
+	case workspace != "":
+		return "workspace", workspace, nil
+	case pane == paneAuto:
+		raw, err := herdrQuery("agent", "list")
+		if err != nil {
+			return "", "", err
+		}
+		agents, err := parseAgentPanes(raw)
+		if err != nil {
+			return "", "", err
+		}
+		currentRaw, err := herdrQuery("pane", "current")
+		if err != nil {
+			return "", "", err
+		}
+		self, err := parseCurrentPane(currentRaw)
+		if err != nil {
+			return "", "", err
+		}
+		target, err := choosePane("--herdr-pane", paneAuto, self, agents)
+		if err != nil {
+			return "", "", err
+		}
+		return "pane", target.PaneID, nil
+	}
+	return "pane", pane, nil
+}
 
 // herdrRow is the state one sidebar row shows.
 type herdrRow struct {

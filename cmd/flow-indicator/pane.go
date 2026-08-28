@@ -86,8 +86,9 @@ func parseCurrentPane(raw []byte) (agentPane, error) {
 	return *env.Result.Pane, nil
 }
 
-// paneChoices formats the agent panes as --pane arguments for an error.
-func paneChoices(agents []agentPane) string {
+// paneChoices formats the agent panes as arguments for the named flag, for
+// an error.
+func paneChoices(flag string, agents []agentPane) string {
 	if len(agents) == 0 {
 		return "; no agent panes are running"
 	}
@@ -95,7 +96,7 @@ func paneChoices(agents []agentPane) string {
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].PaneID < sorted[j].PaneID })
 	var b strings.Builder
 	for _, a := range sorted {
-		fmt.Fprintf(&b, "\n  --pane %s  (%s)", a.PaneID, a.Agent)
+		fmt.Fprintf(&b, "\n  %s %s  (%s)", flag, a.PaneID, a.Agent)
 	}
 	return b.String()
 }
@@ -107,14 +108,14 @@ func paneChoices(agents []agentPane) string {
 // split means the agent beside that split, not one three tabs away. A tab
 // with no agent widens to the workspace, for the layout where the meter runs
 // in a tab of its own.
-func choosePane(target string, self agentPane, agents []agentPane) (agentPane, error) {
+func choosePane(flag, target string, self agentPane, agents []agentPane) (agentPane, error) {
 	if target != paneAuto {
 		for _, a := range agents {
 			if a.PaneID == target {
 				return a, nil
 			}
 		}
-		return agentPane{}, fmt.Errorf("pane: no agent runs in pane %s%s", target, paneChoices(agents))
+		return agentPane{}, fmt.Errorf("pane: no agent runs in pane %s%s", target, paneChoices(flag, agents))
 	}
 	candidates := filterAgentPanes(agents, func(a agentPane) bool { return a.TabID == self.TabID })
 	if len(candidates) == 0 {
@@ -123,12 +124,12 @@ func choosePane(target string, self agentPane, agents []agentPane) (agentPane, e
 	switch len(candidates) {
 	case 0:
 		return agentPane{}, fmt.Errorf("pane: no agent pane in tab %s or workspace %s%s",
-			self.TabID, self.WorkspaceID, paneChoices(agents))
+			self.TabID, self.WorkspaceID, paneChoices(flag, agents))
 	case 1:
 		return candidates[0], nil
 	}
 	return agentPane{}, fmt.Errorf("pane: more than one agent pane is adjacent; pass the one to follow%s",
-		paneChoices(candidates))
+		paneChoices(flag, candidates))
 }
 
 func filterAgentPanes(agents []agentPane, keep func(agentPane) bool) []agentPane {
@@ -232,7 +233,7 @@ func paneTarget(target string) (agentPane, string, error) {
 			return agentPane{}, "", err
 		}
 	}
-	pane, err := choosePane(target, self, agents)
+	pane, err := choosePane("--pane", target, self, agents)
 	if err != nil {
 		return agentPane{}, "", err
 	}

@@ -55,6 +55,33 @@ func TestHerdrArgsWorkspaceScope(t *testing.T) {
 	}
 }
 
+// Target resolution: explicit ids pass through, both flags at once is an
+// error, and workspace auto is this process's own workspace from the
+// environment. The pane auto branch reuses choosePane, which pane_test.go
+// covers, and needs a live herdr, so it is not exercised here.
+func TestResolveHerdrTarget(t *testing.T) {
+	if _, _, err := resolveHerdrTarget("w1:p1", "w1"); err == nil {
+		t.Error("both flags set did not error")
+	}
+	scope, id, err := resolveHerdrTarget("", "")
+	if err != nil || scope != "pane" || id != "" {
+		t.Errorf("empty flags = (%s, %q, %v); the reporter must stay disabled", scope, id, err)
+	}
+	scope, id, err = resolveHerdrTarget("w1:p1", "")
+	if err != nil || scope != "pane" || id != "w1:p1" {
+		t.Errorf("explicit pane = (%s, %q, %v)", scope, id, err)
+	}
+	scope, id, err = resolveHerdrTarget("", "w3G")
+	if err != nil || scope != "workspace" || id != "w3G" {
+		t.Errorf("explicit workspace = (%s, %q, %v)", scope, id, err)
+	}
+	t.Setenv("HERDR_WORKSPACE_ID", "w9")
+	scope, id, err = resolveHerdrTarget("", "auto")
+	if err != nil || scope != "workspace" || id != "w9" {
+		t.Errorf("workspace auto = (%s, %q, %v); want the workspace HERDR_WORKSPACE_ID names", scope, id, err)
+	}
+}
+
 // A nil reporter is the disabled case and must be inert.
 func TestHerdrReporterNilIsInert(t *testing.T) {
 	var h *herdrReporter
