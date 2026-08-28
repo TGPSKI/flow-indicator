@@ -9,7 +9,7 @@ import (
 // The row is pushed as tokens herdr can render in a sidebar row, with a TTL so
 // a dead meter expires instead of leaving a phase that stopped being true.
 func TestHerdrArgs(t *testing.T) {
-	args := herdrArgs("w1V:p1", 7, herdrRow{
+	args := herdrArgs("pane", "w1V:p1", 7, herdrRow{
 		phase: "THRASH", turn: "turn 12", elapsed: "53m40s", trend: "CPB mid → bad",
 	})
 	joined := strings.Join(args, " ")
@@ -45,6 +45,16 @@ func TestHerdrClearsEmptyTokens(t *testing.T) {
 	}
 }
 
+// A workspace target reports through the workspace surface, which herdr
+// renders on the space row every workspace has, promoted agent or not.
+func TestHerdrArgsWorkspaceScope(t *testing.T) {
+	args := herdrArgs("workspace", "w3G", 7, herdrRow{phase: "FLOW"})
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "workspace report-metadata w3G") {
+		t.Errorf("workspace scope not used:\n%s", joined)
+	}
+}
+
 // A nil reporter is the disabled case and must be inert.
 func TestHerdrReporterNilIsInert(t *testing.T) {
 	var h *herdrReporter
@@ -52,9 +62,9 @@ func TestHerdrReporterNilIsInert(t *testing.T) {
 	h.Close()
 }
 
-// Disabling is by empty pane, and must not start a worker.
+// Disabling is by empty target id, and must not start a worker.
 func TestHerdrDisabledWithoutPane(t *testing.T) {
-	if h := newHerdrReporter(t.Context(), ""); h != nil {
+	if h := newHerdrReporter(t.Context(), "pane", ""); h != nil {
 		t.Error("a reporter was started with no pane to report to")
 	}
 }

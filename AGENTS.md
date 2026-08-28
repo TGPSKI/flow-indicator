@@ -39,9 +39,10 @@ the contradiction and the resolution under "Judgement calls" in
    optional classifier.
 6. **No intervention.** Nothing in this program may act on, prompt, stop, or
    modify the agent session it measures. The one outbound write is
-   `watch --herdr-pane`, which pushes four display tokens with a TTL into
-   herdr's own sidebar. It reads no herdr state, changes no pane, and touches
-   no server lifecycle; anything beyond a display token is intervention.
+   `watch --herdr-pane` / `--herdr-workspace`, which pushes four display
+   tokens with a TTL into herdr's own sidebar. It reads no herdr state,
+   changes no pane, and touches no server lifecycle; anything beyond a
+   display token is intervention.
 
 ## Architecture
 

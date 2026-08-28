@@ -9,10 +9,16 @@ import (
 
 // Reporting the meter into a herdr sidebar row.
 //
-// herdr renders pane metadata tokens in its own sidebar, so the phase does not
+// herdr renders metadata tokens in its own sidebar, so the phase does not
 // need a pane of its own to be visible. This pushes four tokens and nothing
 // else: it never reads herdr's state, never changes a pane, and never touches
 // the running server's lifecycle.
+//
+// Two targets exist because they display under different conditions. Pane
+// tokens render only on an agents-panel row, which herdr draws only for a
+// pane it has promoted to an agent; workspace tokens render on the space row
+// every workspace already has. Either way the tokens are invisible until the
+// herdr sidebar config names them ($flow_phase and friends) in a row.
 //
 // Every push carries a TTL. If this process dies, the row expires instead of
 // showing a phase that stopped being true.
@@ -64,10 +70,11 @@ func (r herdrRow) tokens() []string {
 	return args
 }
 
-// herdrArgs is the full command line for one push.
-func herdrArgs(pane string, seq int, r herdrRow) []string {
+// herdrArgs is the full command line for one push. scope is "pane" or
+// "workspace" — the two report-metadata surfaces herdr exposes.
+func herdrArgs(scope, id string, seq int64, r herdrRow) []string {
 	args := []string{
-		"pane", "report-metadata", pane,
+		scope, "report-metadata", id,
 		"--source", herdrSource,
 		"--seq", fmt.Sprintf("%d", seq),
 		"--ttl-ms", fmt.Sprintf("%d", herdrTTL.Milliseconds()),
@@ -81,29 +88,35 @@ func herdrArgs(pane string, seq int, r herdrRow) []string {
 // push is still running, the offer is dropped, because the next draw is a
 // better row than the one that could not be sent.
 type herdrReporter struct {
-	pane string
-	rows chan herdrRow
-	done chan struct{}
+	scope string
+	id    string
+	rows  chan herdrRow
+	done  chan struct{}
 }
 
-// newHerdrReporter starts a reporter for a pane. An empty pane disables it,
-// and every method on a nil reporter is a no-op.
-func newHerdrReporter(ctx context.Context, pane string) *herdrReporter {
-	if pane == "" {
+// newHerdrReporter starts a reporter for one pane or workspace. An empty id
+// disables it, and every method on a nil reporter is a no-op.
+func newHerdrReporter(ctx context.Context, scope, id string) *herdrReporter {
+	if id == "" {
 		return nil
 	}
 	h := &herdrReporter{
-		pane: pane,
-		rows: make(chan herdrRow, 1),
-		done: make(chan struct{}),
+		scope: scope,
+		id:    id,
+		rows:  make(chan herdrRow, 1),
+		done:  make(chan struct{}),
 	}
 	go h.run(ctx)
 	return h
 }
 
+// seq is the pane's per-source freshness mark, and herdr keeps the highest
+// value it has ever accepted for a source, outliving this process. A counter
+// restarting at 1 would sit below the previous run's mark and every push
+// would be dropped as stale, so seq is wall-clock nanoseconds — above any
+// earlier run's mark, the same scheme herdr's own hook integrations use.
 func (h *herdrReporter) run(ctx context.Context) {
 	defer close(h.done)
-	seq := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -111,21 +124,20 @@ func (h *herdrReporter) run(ctx context.Context) {
 			// clearing it now means the sidebar never shows a stopped meter as
 			// a live one. The context is already cancelled, so the clear gets
 			// its own bounded one.
-			h.push(context.Background(), seq+1, herdrRow{})
+			h.push(context.Background(), time.Now().UnixNano(), herdrRow{})
 			return
 		case row := <-h.rows:
-			seq++
-			h.push(ctx, seq, row)
+			h.push(ctx, time.Now().UnixNano(), row)
 		}
 	}
 }
 
 // push runs one report. Failures are ignored: herdr may not be running, and a
 // meter that cannot draw a sidebar row is still a working meter.
-func (h *herdrReporter) push(ctx context.Context, seq int, row herdrRow) {
+func (h *herdrReporter) push(ctx context.Context, seq int64, row herdrRow) {
 	ctx, cancel := context.WithTimeout(ctx, herdrTimeout)
 	defer cancel()
-	_ = exec.CommandContext(ctx, "herdr", herdrArgs(h.pane, seq, row)...).Run()
+	_ = exec.CommandContext(ctx, "herdr", herdrArgs(h.scope, h.id, seq, row)...).Run()
 }
 
 // Report offers a row. It never blocks and never fails.

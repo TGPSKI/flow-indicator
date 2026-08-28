@@ -132,7 +132,11 @@ Bootstrap reads the source and never writes to it: about 0.2 s on a
   --stream-id <id>  override the stream identifier
   --force           replace an existing session directory
   --herdr-pane <id> also push the phase into this herdr pane's
-                    sidebar as metadata tokens, with a TTL
+                    sidebar as metadata tokens, with a TTL; the
+                    row exists only for a promoted agent pane
+  --herdr-workspace <id>
+                    push the same tokens onto a workspace's
+                    space row, which every workspace has
   --config <path>   configuration file
   --data-dir <path> storage root
   --profile <path>  marker lexicon overlay
@@ -670,6 +674,7 @@ func watch(args []string) error {
 	sessionRoot := fs.String("root", "", "working directory action targets are made relative to, for sources that record none")
 	streamID := fs.String("stream-id", "", "override the stream identifier")
 	herdrPane := fs.String("herdr-pane", "", "report the phase into this herdr pane's sidebar row as metadata tokens")
+	herdrWorkspace := fs.String("herdr-workspace", "", "report the phase into this herdr workspace's space row as metadata tokens")
 	current := fs.Bool("current", false, "follow the session recorded for this working directory")
 	last := fs.Bool("last", false, "follow the most recently written session on this machine")
 	pane := fs.String("pane", "", "follow the agent session in this herdr pane; auto finds the agent pane sharing this pane's tab")
@@ -706,7 +711,10 @@ func watch(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	view := display{micro: !*full, color: useColor(*noColor), width: *width, herdrPane: *herdrPane}
+	if *herdrPane != "" && *herdrWorkspace != "" {
+		return fmt.Errorf("watch: --herdr-pane and --herdr-workspace name one sidebar row each; pass one")
+	}
+	view := display{micro: !*full, color: useColor(*noColor), width: *width, herdrPane: *herdrPane, herdrWorkspace: *herdrWorkspace}
 
 	// --adapter carries a default, so its value cannot say whether the operator
 	// chose it. Only a flag actually passed narrows a search or overrides an
@@ -833,9 +841,21 @@ type display struct {
 	micro bool
 	color bool
 	width int
-	// herdrPane names a pane whose sidebar row should carry the phase. Empty
-	// means the meter draws only into its own terminal.
-	herdrPane string
+	// herdrPane names a pane whose sidebar row should carry the phase, and
+	// herdrWorkspace a workspace's space row; herdr draws a pane row only for
+	// a promoted agent, a space row for every workspace. At most one is set.
+	// Both empty means the meter draws only into its own terminal.
+	herdrPane      string
+	herdrWorkspace string
+}
+
+// herdrTarget is the reporter scope and id the display selects, or empty ids
+// when the meter reports nowhere.
+func (d display) herdrTarget() (scope, id string) {
+	if d.herdrWorkspace != "" {
+		return "workspace", d.herdrWorkspace
+	}
+	return "pane", d.herdrPane
 }
 
 // useColor honours --no-color and the NO_COLOR convention, and stays off when
@@ -916,7 +936,8 @@ func watchFile(ctx context.Context, cfg config.Config, root, harnessName string,
 	live := liveness{last: time.Now()}
 	moves := render.NewHighlights()
 
-	herdr := newHerdrReporter(ctx, view.herdrPane)
+	herdrScope, herdrID := view.herdrTarget()
+	herdr := newHerdrReporter(ctx, herdrScope, herdrID)
 	defer herdr.Close()
 	var lastRow herdrRow
 	var lastPush time.Time
