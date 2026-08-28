@@ -5,6 +5,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-28
+
 ### Added
 
 - `watch --herdr-workspace <id|auto>`: push the meter's four tokens onto a
