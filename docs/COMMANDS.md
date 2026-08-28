@@ -142,7 +142,8 @@ a restart. See [HERDR.md](HERDR.md).
 | `--current` | `false` | the session recorded for this working directory |
 | `--last` | `false` | the most recently written session on this machine |
 | `--pane <id\|auto>` | `""` | the session the agent in a herdr pane is running |
-| `--herdr-pane <id>` | `""` | also push phase, turn, elapsed and trend into that pane's sidebar row |
+| `--herdr-pane <id\|auto>` | `""` | also push phase, turn, elapsed and trend into that pane's sidebar row |
+| `--herdr-workspace <id\|auto>` | `""` | push the same tokens onto that workspace's space row |
 | `--tail-only` | `false` | follow from the end, building no state first |
 | `--full` | `false` | the one-screen audit view instead of the side-pane meter |
 | `--no-color` | `false` | no ANSI attributes; `NO_COLOR` is honoured |
