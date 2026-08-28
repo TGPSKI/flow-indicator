@@ -55,7 +55,7 @@ func TestParseCurrentPane(t *testing.T) {
 
 func TestChoosePaneExplicit(t *testing.T) {
 	agents := fixtureAgents(t)
-	got, err := choosePane("w1W:p1", agentPane{}, agents)
+	got, err := choosePane("--pane", "w1W:p1", agentPane{}, agents)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestChoosePaneExplicit(t *testing.T) {
 }
 
 func TestChoosePaneExplicitMissListsTheChoices(t *testing.T) {
-	_, err := choosePane("w9Z:p1", agentPane{}, fixtureAgents(t))
+	_, err := choosePane("--pane", "w9Z:p1", agentPane{}, fixtureAgents(t))
 	if err == nil {
 		t.Fatal("want an error for a pane with no agent")
 	}
@@ -82,7 +82,7 @@ func TestChoosePaneExplicitMissListsTheChoices(t *testing.T) {
 func TestChoosePaneAutoPrefersTheTab(t *testing.T) {
 	agents := fixtureAgents(t)
 	self := agentPane{PaneID: "w1W:p8", TabID: "w1W:t2", WorkspaceID: "w1W"}
-	got, err := choosePane(paneAuto, self, agents)
+	got, err := choosePane("--pane", paneAuto, self, agents)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestChoosePaneAutoPrefersTheTab(t *testing.T) {
 func TestChoosePaneAutoWidensToTheWorkspace(t *testing.T) {
 	agents := []agentPane{{PaneID: "w2:p1", TabID: "w2:t1", WorkspaceID: "w2", Agent: "claude"}}
 	self := agentPane{PaneID: "w2:p4", TabID: "w2:t3", WorkspaceID: "w2"}
-	got, err := choosePane(paneAuto, self, agents)
+	got, err := choosePane("--pane", paneAuto, self, agents)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestChoosePaneAutoWidensToTheWorkspace(t *testing.T) {
 func TestChoosePaneAutoRefusesTwoCandidates(t *testing.T) {
 	agents := fixtureAgents(t)
 	self := agentPane{PaneID: "w1W:p9", TabID: "w1W:t9", WorkspaceID: "w1W"}
-	_, err := choosePane(paneAuto, self, agents)
+	_, err := choosePane("--pane", paneAuto, self, agents)
 	if err == nil || !strings.Contains(err.Error(), "--pane w1W:p1") || !strings.Contains(err.Error(), "--pane w1W:p2") {
 		t.Fatalf("want both candidates offered, got %v", err)
 	}
@@ -114,7 +114,7 @@ func TestChoosePaneAutoRefusesTwoCandidates(t *testing.T) {
 
 func TestChoosePaneAutoWithNoAgentsSaysSo(t *testing.T) {
 	self := agentPane{TabID: "w1:t1", WorkspaceID: "w1"}
-	_, err := choosePane(paneAuto, self, nil)
+	_, err := choosePane("--pane", paneAuto, self, nil)
 	if err == nil || !strings.Contains(err.Error(), "no agent pane") {
 		t.Fatalf("want a no-agent error, got %v", err)
 	}
