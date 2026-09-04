@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - .agents/skills/calibration-loop/ routes corpus sealing, candidate annotation,
   human adjudication, and calibration through merged artifacts.
 
+- .agents/skills/transcript-triage/ resolves transcript-coordinate mismatches
+  before source-order investigation and evidence-preserving remediation.
+
 ## [0.4.1] - 2026-09-03
 
 ### Added
