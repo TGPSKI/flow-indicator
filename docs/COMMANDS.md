@@ -1,6 +1,6 @@
 # Commands
 
-Twelve subcommands in one binary. `flow-indicator help <command>` prints the
+Thirteen subcommands in one binary. `flow-indicator help <command>` prints the
 same flags this document lists; what it adds here is when to reach for each one.
 
 | command | use it when |
@@ -16,6 +16,7 @@ same flags this document lists; what it adds here is when to reach for each one.
 | [`label`](#label) | you want units for a human labeler to fill in |
 | [`annotate`](#annotate) | you want a model to fill those units in first |
 | [`calibrate`](#calibrate) | you want a score for the rules against those labels |
+| [`config`](#config) | you want to create or inspect configuration |
 | [`version`](#version) | you are reporting a problem and need to name the build |
 
 ## Conventions
@@ -47,6 +48,22 @@ named by identifier carries its own harness.
 ---
 
 ## Looking around
+
+### `config`
+
+Create the default configuration file or inspect the configuration in force.
+
+```bash
+flow-indicator config init
+flow-indicator config show
+flow-indicator config init --config ./flow-indicator.json
+```
+
+`init` creates the parent directory and writes the complete defaults to the XDG
+configuration path. It refuses to overwrite an existing file. `show` prints
+the complete effective configuration; when the default file is absent, that is
+the built-in defaults. Pass `--config <path>` to either action to use another
+file.
 
 ### `version`
 

@@ -5,6 +5,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-03
+
+### Added
+
+- `flow-indicator config init` writes the complete default configuration to the
+  XDG path, creates its parent directory and refuses an overwrite.
+
+- `flow-indicator config show` prints the complete effective configuration,
+  including built-in defaults when no default configuration file exists.
+
 ## [0.4.0] - 2026-08-28
 
 ### Added

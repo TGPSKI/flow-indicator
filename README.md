@@ -458,6 +458,10 @@ ranking.
 Missing file means defaults. An unknown key or an invalid value is an error:
 there is no silent fallback.
 
+Create the default file with `flow-indicator config init`; it creates the
+parent directory and refuses to overwrite an existing file. Run
+`flow-indicator config show` to print the complete effective configuration.
+
 ```json
 {
   "window": {
