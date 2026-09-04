@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   configuration updates through privacy choices, optional profiles and semantic
   endpoints, session discovery, and a first replay or watch.
 
+- .agents/skills/calibration-loop/ routes corpus sealing, candidate annotation,
+  human adjudication, and calibration through merged artifacts.
+
 ## [0.4.1] - 2026-09-03
 
 ### Added
