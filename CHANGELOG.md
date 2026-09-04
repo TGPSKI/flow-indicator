@@ -5,6 +5,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- .agents/skills/user-onboarding/SKILL.md guides local installation and later
+  configuration updates through privacy choices, optional profiles and semantic
+  endpoints, session discovery, and a first replay or watch.
+
 ## [0.4.1] - 2026-09-03
 
 ### Added
