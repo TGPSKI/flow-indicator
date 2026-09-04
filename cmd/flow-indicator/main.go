@@ -55,6 +55,7 @@ commands:
   label       emit units for a labeler to fill in
   annotate    run a model over the units, write candidate labels
   calibrate   score the rules against labels
+  config      create or show the effective configuration
   version     the build this binary came from
 
 harnesses: claude-code, codex, opencode, qwen, generic
@@ -289,6 +290,21 @@ because a score that cannot name its own subject is not evidence.
   --data-dir <path>     storage root
   --profile <path>      marker lexicon overlay
 `,
+	"config": `flow-indicator config — create or show configuration.
+
+  flow-indicator config init
+  flow-indicator config show
+  flow-indicator config init --config ./flow-indicator.json
+  flow-indicator config show --config ./flow-indicator.json
+
+init writes the complete default configuration, creating parent
+directories when needed. It refuses to overwrite a file.
+
+show prints the complete effective configuration. With no file at
+the default path, it prints the built-in defaults.
+
+  --config <path>   configuration file; default is the XDG path
+`,
 }
 
 // help prints the detail for one command.
@@ -371,6 +387,8 @@ func main() {
 		err = annotateCmd(os.Args[2:])
 	case "sessions":
 		err = sessionsCmd(os.Args[2:])
+	case "config":
+		err = configCmd(os.Args[2:])
 	case "-h", "--help", "help":
 		help(os.Args[2:])
 		return
