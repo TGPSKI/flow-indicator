@@ -163,7 +163,7 @@ a restart. See [HERDR.md](HERDR.md).
 | `--herdr-workspace <id\|auto>` | `""` | push the same tokens onto that workspace's space row |
 | `--tail-only` | `false` | follow from the end, building no state first |
 | `--full` | `false` | the one-screen audit view instead of the side-pane meter |
-| `--model-details` | `false` | show model queue, failures, timing and latest error below the compact changed/applied row |
+| `--model-details` | `false` | add model queues, timing and latest error; validated/eligible coverage and failures appear in the default full view |
 | `--no-color` | `false` | no ANSI attributes; `NO_COLOR` is honoured |
 | `--width <n>` | `0` | side-pane inner width in columns |
 | `--adapter <name>` | `claude-code` | narrow discovery, or decode a named file as this |
@@ -179,6 +179,16 @@ that starts halfway through shows a regime derived from a fragment. Bootstrap
 reads the source and never writes to it. A bare *path* starts at the end
 instead, since a path is not always a session; `--from-start` and `--offset` are
 start points, not resumes, and state is built from that byte forward.
+
+In `hybrid` and `deferred`, records present when the watch opens use markers
+and receive durable bootstrap-drop dispositions. Only new arrivals enter the
+semantic queues. This policy applies to every harness. Piped input is read to
+EOF before projection and is all bootstrap. Use strict `replay` for semantic
+classification of a finished transcript.
+
+Forced replacement removes prior `source.json`, `summary.json`, `metrics.json`,
+`report.md` and `timeline.csv` before the first frame. The watch writes fresh
+projections on shutdown; `report` reconstructs current evidence while it runs.
 
 `--adapter` only narrows discovery when you actually pass it. Passing one that
 contradicts a `--pane` result is an error, not an override.

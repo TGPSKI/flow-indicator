@@ -64,6 +64,7 @@ type Classifier struct {
 	Workers         int    `json:"workers"`
 	MaxQueue        int    `json:"max_queue"`
 	DisableThinking bool   `json:"disable_thinking"`
+	ConstrainedJSON bool   `json:"constrained_json"`
 }
 
 // Privacy bounds what source text is written to disk.

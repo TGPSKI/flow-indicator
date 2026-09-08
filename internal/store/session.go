@@ -85,8 +85,9 @@ func OpenSession(root, streamID string, force bool) (*Session, error) {
 	if existing && !force {
 		return nil, fmt.Errorf("store: session %s already holds events at %s: pass --force to replace it", streamID, dir)
 	}
-	if existing {
-		for _, name := range eventFiles {
+	if force {
+		names := append([]string{FileSource, FileSummary, FileMetricsJSON, FileReport, FileTimeline}, eventFiles...)
+		for _, name := range names {
 			path := filepath.Join(dir, name)
 			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 				return nil, fmt.Errorf("store: remove %s: %w", path, err)
@@ -121,11 +122,11 @@ func FileFor(kind string) string {
 		event.KindStopCandidate, event.KindResetCandidate, event.KindPointerCandidate,
 		event.KindObligationCandidate, event.KindNearRepeatCandidate,
 		event.KindExpansionCandidate, event.KindClassifierFailed,
-		event.KindSemanticCompleted:
+		event.KindSemanticCompleted, event.KindSemanticDisposition:
 		return FileClassifications
 	case event.KindPointerResolved, event.KindEpochAdvanced,
 		event.KindRegimeChanged, event.KindTrendEmerged, event.KindMetricsComputed,
-		event.KindStateAtObservationStop, event.KindSemanticProjectionUpdated:
+		event.KindStateAtObservationStop, event.KindSemanticProjectionUpdated, event.KindSemanticProjectionDelta:
 		return FileMetrics
 	}
 	switch {

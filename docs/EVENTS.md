@@ -86,7 +86,9 @@ transitions, so a prefix rule would file a candidate as a state change.
 | `repair_expansion_candidate` | classified | `expansionPayload` | `classifications.jsonl` | An agent turn carried expansion markers or a repair claim |
 | `classifier_failed` | classified | `failurePayload` | `classifications.jsonl` | The classifier returned an error. A safe fallback result returned with the error is retained; otherwise the turn contributes no classified evidence |
 | `semantic_classification_completed` | classified | `classify.Completion` | `classifications.jsonl` | A bounded local-model worker attempt finished, failed, timed out or was canceled for one source record. It carries job identity, attempt, input hash, classifier provenance, latency and any validated result |
-| `semantic_projection_updated` | derived | `state.SemanticProjectionUpdate` | `metrics.jsonl` | The complete source-ordered projection selected by completed semantic results received so far; used by `hybrid`, while `deferred` retains completions without this update |
+| `semantic_disposition` | classified | `state.SemanticDisposition` | `classifications.jsonl` | Eligible record queued, request started, or dropped; carries job identity, classifier identity, input hash, source, operator-turn flag and reason |
+| `semantic_projection_delta` | derived | `state.SemanticProjectionDelta` | `metrics.jsonl` | Revision, part index, source sequence, first-part flag and replacement events for one changed source record |
+| `semantic_projection_updated` | derived | `state.SemanticProjectionUpdate` | `metrics.jsonl` | Commits a revision's ordered parts, newly selected completion IDs, applied count and changed count; legacy `events` payloads remain readable |
 | `obligation_introduced` | derived | `obligationPayload` | `obligations.jsonl` | A normalized obligation key was seen for the first time in this epoch. The candidate enters the unresolved inventory; nothing here establishes that the requirement is in force |
 | `obligation_repeated` | derived | `obligationRepeatPayload` | `obligations.jsonl` | The requirement was stated again, matched on the normalized sentence or on the content-token key; `during_correction` says whether the turn was also a correction |
 | `obligation_violated` | derived | `obligationPayload` | `obligations.jsonl` | A correction's identified target key is this obligation's key. A repeat inside an unrelated correction is not enough |
@@ -145,8 +147,10 @@ At a real source end, `Projector.Finish` emits the outstanding `repair_status`,
 the local worker finishes after the source reader has continued. Its identity
 includes the classifier and immutable input hash, so two semantic attempts for
 one source sequence remain separate append-only facts. In `hybrid` mode, each
-completed result appends `semantic_projection_updated`, which carries a fresh
-source-ordered projection selected from the results received so far. In
+completed results can append bounded `semantic_projection_delta` parts followed
+by a `semantic_projection_updated` commit. Parts are invisible until the commit
+names their revision and exact count. Parts and commits retain append order;
+replacement records are folded in source order. In
 `deferred` mode, strict replay can select a completion later and the live
 projection remains on markers.
 
@@ -155,6 +159,15 @@ separate operational section. Their completion counts and latency percentiles
 are not domain metrics. In `hybrid`, the completed result may also be selected
 by a separate, source-ordered semantic projection update; the operational
 counts themselves cannot change a regime, repair, obligation or pointer outcome.
+
+`semantic_disposition` records queue admission (`pending`, `requested:false`),
+request start (`pending`, `requested:true`), and pre-request drops (`dropped`).
+Terminal outcomes use `semantic_classification_completed`; only `completed`
+carries a result. Shutdown writes cancellations for every unfinished job,
+including jobs that never reached a worker. Fold by job identity, taking the
+terminal outcome over any pending event. `operator_turn` separates operator
+coverage from eligible agent repair records. Counter definitions are in
+[INFERENCE.md](INFERENCE.md#coverage).
 
 Strict replay can select a completion only when its `stream_id`, `source_seq`,
 classifier identity and `input_hash` exactly match the reconstructed classifier

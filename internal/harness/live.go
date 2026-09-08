@@ -25,6 +25,8 @@ type Live interface {
 	// Next blocks until at least one new record is available, then returns the
 	// records that arrived. It returns ctx.Err() when the context ends.
 	Next(ctx context.Context) ([]stream.Record, error)
+	// Historical identifies records already present when observation opened.
+	Historical(stream.Record) bool
 	// Position is where this observation reached: a byte offset for a
 	// file-backed harness, a count of records handed out for a store that has
 	// no offsets. It is recorded so a later run can say where it started, and
@@ -122,6 +124,7 @@ func (f *fileTail) Next(ctx context.Context) ([]stream.Record, error) {
 	return f.dec.Decode(raw, stream.SourceRef{Adapter: f.name, Path: f.path, Offset: start})
 }
 
-func (f *fileTail) Position() int64 { return f.tail.Offset() }
-func (f *fileTail) Mark() string    { return fmt.Sprintf("byte %d", f.tail.Offset()) }
-func (f *fileTail) Close() error    { return f.tail.Close() }
+func (f *fileTail) Position() int64                 { return f.tail.Offset() }
+func (f *fileTail) Historical(r stream.Record) bool { return r.Source.Offset < f.tail.InitialSize() }
+func (f *fileTail) Mark() string                    { return fmt.Sprintf("byte %d", f.tail.Offset()) }
+func (f *fileTail) Close() error                    { return f.tail.Close() }

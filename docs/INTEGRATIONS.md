@@ -88,10 +88,27 @@ and failure modes: [HERDR.md](HERDR.md).
 
 ## Instance records
 
+The optional regression test `TestCopiedLongSessionWatchModes` reads
+`FLOW_INDICATOR_TEST_SOURCE_COPY`. Set it only to a copied transcript; it reads
+the recorded 32,504,875-byte audit prefix and exercises watches on further
+temporary copies with controlled semantic responses. Production commands do
+not read this variable.
+
+`TestRealModelValidation` and `TestRealHybridWatch` additionally require
+`FLOW_INDICATOR_TEST_MODEL_CONFIG`, a configuration file naming the actual
+endpoint and model. These opt-in tests send copied-source text to that endpoint
+and retain private artifacts under `/tmp/flow-indicator-real-*`. The replay test
+compares constrained and unconstrained decoding using the baseline profile;
+the live test loads the profile beside the named configuration file.
+`TestRealSchemaOrder` requires only the model configuration and sends six
+synthetic probes with two schema property orders. Its logs and the replay
+validation counts are diagnostic measurements, not labeled accuracy gates.
+
 Each running `watch` on a discovered session — a file, or opencode's store —
 writes one operational record beside the
 session directories, at `$XDG_DATA_HOME/flow-indicator/instances/<id>.json`,
-refreshed every 10 s with a 30 s TTL. It is written to a temporary file and
+refreshed on the one-second watch heartbeat with a 30 s TTL. Source arrivals
+can refresh it too, at most twice per second. It is written to a temporary file and
 renamed, so a reader never sees a half-written record.
 
 Other local tools read it only through the public command:

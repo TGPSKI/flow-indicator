@@ -204,36 +204,30 @@ func TestWorkerRecordsDeadlineSeparatelyFromFailure(t *testing.T) {
 	}
 }
 
-func TestWorkerRetriesOneTimeoutThroughCatchUp(t *testing.T) {
-	gate := make(chan struct{})
-	w, err := NewWorkerWithDeadline(queuedClassifier{gate: gate}, 1, 1, 5*time.Millisecond)
+func TestWorkerTimeoutIsOneTerminalDisposition(t *testing.T) {
+	w, err := NewWorkerWithDeadline(queuedClassifier{gate: make(chan struct{})}, 1, 1, 5*time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer w.Close()
-	first, err := w.Submit("stream", 0, semanticInput(1))
+	job, err := w.Submit("stream", 0, semanticInput(1))
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	var got []Completion
-	for range 2 {
-		select {
-		case completion := <-w.Results():
-			got = append(got, completion)
-		case <-time.After(time.Second):
-			t.Fatal("worker did not finish both timeout attempts")
+	select {
+	case c := <-w.Results():
+		if c.JobID != job.ID || c.Status != CompletionTimedOut {
+			t.Fatalf("completion = %+v", c)
 		}
-	}
-	if got[0].JobID != first.ID || got[0].Attempt != 0 {
-		t.Fatalf("first attempt = %+v", got[0])
-	}
-	if got[1].JobID == first.ID || got[1].Attempt != 1 {
-		t.Fatalf("retry attempt = %+v", got[1])
+	case <-time.After(time.Second):
+		t.Fatal("no timeout outcome")
 	}
 	stats := w.Snapshot()
-	if stats.Requested != 2 || stats.TimedOut != 2 || stats.Pending != 0 || stats.CatchUp != 0 || stats.Dropped != 0 {
-		t.Fatalf("stats after retry = %+v", stats)
+	if stats.Eligible != 1 || stats.Requested != 1 || stats.TimedOut != 1 || stats.Pending != 0 {
+		t.Fatalf("coverage = %+v", stats)
+	}
+	if len(w.DrainEvidence()) != 3 {
+		t.Fatal("expected queued, requested and terminal dispositions")
 	}
 }
 

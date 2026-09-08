@@ -31,8 +31,7 @@ configured one, whatever it is.
 | suitable for `replay` | yes | yes, at one request per eligible turn |
 
 Session classification has no batching or fallback endpoint. A timed-out live
-request is retried once through the bounded catch-up lane; every attempt is
-recorded separately.
+request is terminal; no retry consumes capacity reserved for new arrivals.
 
 ## Modes
 
@@ -59,12 +58,19 @@ document. It is a different reading, not a strictly better one.
 The marker tier projects each record immediately; eligible records also enter a
 bounded worker queue. When a validated result arrives, the instrument appends
 it, rebuilds the source-ordered projection from the results received so far,
-and appends a `semantic_projection_updated` derived event. The worker never
-blocks the source reader or terminal repaint.
+and commits bounded delta parts with a `semantic_projection_updated` event.
+Replay and delta serialization run in a background lane. Arrivals during a
+rebuild invalidate its unpublished result; only the newest complete reading
+is published. Source-only batches store changed records, not copied history.
 
 The update selects results in source order, not completion order. Its source
 events and named completions remain in the append-only log, so the live reading
 can change without erasing the marker reading that preceded it.
+
+Records already present when observation opens use markers and receive a
+durable bootstrap-drop disposition. Only later arrivals enter the semantic
+queues. Each harness supplies that boundary through the shared live interface;
+no downstream rule distinguishes a file-backed source from a database.
 
 **`deferred` preserves the former hybrid behavior.** It records completed,
 failed and timed-out semantic work but leaves the live projection on the marker
@@ -88,7 +94,7 @@ The request body is the versioned prompt as the system message and this object
 as the user message:
 
 ```json
-{"turn": {"seq": 411, "speaker": "human", "text": "…"},
+{"turn": {"seq": 411, "speaker": "human", "text": "…", "byte_length": 3},
  "prior_turns": ["…", "…"],
  "unresolved_obligation_candidates": [{"key": "…", "kind": "scope", "text": "…"}],
  "active_repair": {"…": "…"}}
@@ -116,9 +122,22 @@ Validation rejects, rather than repairs:
 | confidence outside [0,1], or NaN | it is recorded as evidence and must be a number |
 | a resolution naming a key the model was not shown, or stating no evidence | a resolution removes a requirement from the inventory, so it is held to the strictest check here |
 | negative expansion counts | a count |
+| a new obligation with an invented key or text absent from the turn | new identity must be reproducible from a source span |
+| a nonempty obligation key absent from the outstanding candidates | a supplied key asserts a semantic repeat, never a new identity |
 
 A rejected reply is a recorded failure and the turn keeps its marker
 classification. **Malformed output is never repaired with a second call.**
+
+Prompt version 5 removes obligation display IDs from context. Candidate and
+repair fields have lowercase JSON names. New obligations return `key:""` and
+exact source text; semantic repeats copy one outstanding `key`. Resolutions
+copy that same field and state evidence. Correction targets and pointer types
+share the closed vocabulary `node`, `alias`, `file`, `path`, `task`, `temporal`,
+`quote`, `namespace`, `relation`, `operation`, `unknown`.
+
+Offsets refer to decoded UTF-8 bytes, including trailing newlines. They must
+fit `turn.byte_length` and land on character boundaries. JSON escape spelling
+is not part of the turn's byte length.
 
 Text the model left uncovered is tiled as `other` rather than dropped;
 otherwise the denominator would shrink whenever the model skipped a sentence,
@@ -163,6 +182,7 @@ An agent stating it did the thing is a claim, never `satisfied`.
 | `workers` | 1 | concurrent semantic jobs in `hybrid` and `deferred`; minimum 1 |
 | `max_queue` | 32 | queue depth in `hybrid` and `deferred`; minimum 1 |
 | `disable_thinking` | false | send vLLM's `chat_template_kwargs.enable_thinking=false`; use when a reasoning model otherwise returns no `message.content` |
+| `constrained_json` | false | request strict `response_format.json_schema` decoding with the turn's offset bound; enable only on an endpoint supporting that protocol |
 
 The key is read from `FLOW_INDICATOR_API_KEY` and is never a flag. It is used
 only as a bearer token on the configured endpoint, and never reaches a session
@@ -179,20 +199,44 @@ the observation.
 - **Both queues are bounded.** `max_queue` bounds the active queue and a
   catch-up queue of the same size. Overflow enters catch-up without delaying
   transcript observation. A job is lost only when both queues are full.
-- **One timeout retry.** A timed-out attempt enters catch-up once. The retry has
-  its own job identity and attempt number; a second timeout is final.
+- **A timeout is terminal.** No automatic retry competes with new arrivals.
 - **Every job has a deadline** in `hybrid` and `deferred`, and every request has the HTTP
   client's 60 s ceiling in both semantic modes.
 - **Shutdown cancels in flight work.** Jobs still queued when `watch` ends are
   counted as canceled, not pending.
-- **One initial request per eligible turn.** A live timeout can add one retry.
+- **At most one request per eligible turn.**
   `flow-indicator corpus` prints turn counts before you point a metered endpoint
   at a corpus.
 
-The default live view reports semantic projection changes as `changed/applied`.
-`watch --model-details` also shows active and catch-up work, failures, timeouts,
-lost jobs, latency and the latest error. These measure the instrument, not the interaction:
+The default live view reports `validated/eligible` and a changed count when it
+fits. The full view also shows failures, timeouts and drops.
+`watch --model-details` adds active and catch-up work, latency and the latest
+error. These measure the instrument, not the interaction:
 **no regime rule reads them**, and they never enter a metric family.
+
+## Coverage
+
+These counts cover eligible operator records and agent records inside an open
+repair cycle. Each disposition carries `operator_turn` for operator-only audits.
+
+| counter | definition |
+|---|---|
+| `eligible` | records the shared semantic eligibility rule admits, including bootstrap, empty and oversized turns |
+| `requested` | eligible records whose worker started a classifier request |
+| `validated` | terminal completions whose result passed classifier validation; `completed` is the stored status and legacy counter name |
+| `failed` | terminal classifier errors other than timeout or cancellation, including invalid responses |
+| `timed_out` | terminal request deadline expiry |
+| `canceled` | eligible queued or active records canceled at observer shutdown |
+| `dropped` | eligible records never requested because they were historical, empty, oversized or both queues were full |
+| `pending` | admitted records without a terminal outcome, including catch-up and active work |
+| `applied` | validated results selected by a committed hybrid projection |
+| `changed` | applied results whose classification fields differ from their original marker result, excluding confidence and provenance |
+
+At an observation boundary, `eligible = validated + failed + timed_out +
+canceled + dropped + pending`. Requested, applied and changed are overlapping
+subsets, not extra outcomes. Queue admission, request start, drops and terminal
+outcomes are append-only facts; a report after shutdown retains these counts.
+Changed counts classifications, not rebuilds, metric movements or regime changes.
 
 ## Failure behaviour
 
@@ -210,7 +254,8 @@ The model supplies fields; the deterministic core decides what they mean.
 Every completion names its source sequence and byte offset, the classifier's
 name, version and hash, the response status, the input hash and the latency.
 
-The classifier hash is `sha256(prompt version, endpoint, model, thinking mode, prompt)`
+The classifier hash is `sha256(prompt version, endpoint, model, thinking mode,
+constrained-decoding mode, prompt/schema hash)`
 truncated to 16 hex characters. **The endpoint is part of the identity on
 purpose**: two local runtimes can expose the same model name with different
 weights or chat templates, and merging those outputs silently would make a
@@ -243,9 +288,9 @@ session — pass `--stream-id`, so the append-only evidence survives.
 
 The session report grows a **semantic operations** section when deferred
 completions exist: retained completions by outcome, latency percentiles, and
-classifier identities. It is not a metric family. Queue depth and drops are
-live-only observations, while the report can only count completions persisted
-before the watch ended.
+classifier identities. It is not a metric family. Dispositions preserve drops
+and cancellations as well as completions. Active/catch-up queue separation and
+the latest latency remain operational details.
 
 ## Calibration
 

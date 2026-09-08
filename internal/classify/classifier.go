@@ -272,35 +272,35 @@ func (r Result) CharsIn(b Bucket) int {
 // passed back to the classifier as context. It is a copy, not the state itself:
 // classifiers never mutate state.
 type ObligationRef struct {
-	ID string
+	ID string `json:"-"`
 	// Key is the candidate's identity. RepeatKey is what a reworded restatement
 	// of the same requirement is recognized by.
-	Key       string
-	RepeatKey string
-	Kind      string
-	Text      string
+	Key       string `json:"key"`
+	RepeatKey string `json:"repeat_key,omitempty"`
+	Kind      string `json:"kind"`
+	Text      string `json:"text"`
 }
 
 // RepairRef is the projector's view of the open repair episode.
 type RepairRef struct {
-	ID     string
-	Depth  int
-	Status string
+	ID     string `json:"id"`
+	Depth  int    `json:"depth"`
+	Status string `json:"status"`
 	// TargetKey names what the correction was about, for recurrence comparison.
 	// TargetPaths are the paths it named, which is what a write can be checked
 	// against.
-	TargetKey   string
-	TargetPaths []string
-	TriggerSeq  uint64
+	TargetKey   string   `json:"target_key"`
+	TargetPaths []string `json:"target_paths"`
+	TriggerSeq  uint64   `json:"trigger_seq"`
 }
 
 // Input is everything a classifier may see about one record.
 type Input struct {
-	Turn                  stream.Record
-	Prior                 []stream.Record
-	PriorOperatorText     []string
-	UnresolvedObligations []ObligationRef
-	ActiveRepair          *RepairRef
+	Turn                  stream.Record   `json:"turn"`
+	Prior                 []stream.Record `json:"prior"`
+	PriorOperatorText     []string        `json:"prior_operator_text"`
+	UnresolvedObligations []ObligationRef `json:"unresolved_obligation_candidates"`
+	ActiveRepair          *RepairRef      `json:"active_repair"`
 }
 
 // Classifier interprets one record.

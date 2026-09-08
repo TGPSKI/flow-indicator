@@ -165,7 +165,7 @@ func TestLiveLabelsAreTitleCaseAndRightAligned(t *testing.T) {
 // The table carries a heading row, including over the provenance column, whose
 // letters are the least self-explaining thing on screen.
 func TestLiveHasColumnHeadings(t *testing.T) {
-	out := Live(sampleView(72))
+	out := Live(sampleView(96))
 	for _, want := range []string{"value", "detail", provHead} {
 		if !strings.Contains(out, want) {
 			t.Errorf("heading %q missing:\n%s", want, out)
@@ -241,10 +241,10 @@ func TestLiveElapsedIsAHeroLine(t *testing.T) {
 
 func TestLiveShowsSemanticOperationalStatus(t *testing.T) {
 	v := sampleView(140)
-	v.Status.Semantic = &classify.Operational{Requested: 8, Completed: 3, Pending: 1, CatchUp: 2, Failed: 1, TimedOut: 1, Applied: 3, Changed: 1, LastError: "endpoint returned status 500", P95MS: 184}
+	v.Status.Semantic = &classify.Operational{Eligible: 8, Requested: 8, Completed: 3, Pending: 3, CatchUp: 2, Failed: 1, TimedOut: 1, Applied: 3, Changed: 1, LastError: "endpoint returned status 500", P95MS: 184}
 	v.Status.ModelDetails = true
 	out := Live(v)
-	for _, want := range []string{"MODEL", "1/3 changed", "MODEL JOBS", "3 answers", "1 active", "2 catching up", "MODEL FAIL", "1 errors", "1 timed out", "MODEL TIME", "95% completed within 184ms", "MODEL WHY", "status 500"} {
+	for _, want := range []string{"MODEL", "3/8 validated", "1 changed", "MODEL JOBS", "3 answers", "1 active", "2 catching up", "MODEL FAIL", "1 errors", "1 timed out", "MODEL TIME", "95% completed within 184ms", "MODEL WHY", "status 500"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("semantic status misses %q:\n%s", want, out)
 		}
@@ -253,9 +253,9 @@ func TestLiveShowsSemanticOperationalStatus(t *testing.T) {
 
 func TestLiveHidesModelDetailsByDefault(t *testing.T) {
 	v := sampleView(96)
-	v.Status.Semantic = &classify.Operational{Applied: 7, Changed: 6, Failed: 2, CatchUp: 24}
+	v.Status.Semantic = &classify.Operational{Eligible: 33, Completed: 7, Applied: 7, Changed: 6, Failed: 2, CatchUp: 24}
 	out := Live(v)
-	if !strings.Contains(out, "6/7 changed") || strings.Contains(out, "MODEL JOBS") || strings.Contains(out, "2 errors") {
+	if !strings.Contains(out, "7/33 validated") || strings.Contains(out, "MODEL JOBS") || !strings.Contains(out, "2 errors") {
 		t.Fatalf("default model row is not compact:\n%s", out)
 	}
 }

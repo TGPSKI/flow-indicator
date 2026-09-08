@@ -97,7 +97,7 @@ func newInstanceEmitter(root, streamID, harnessName, sourcePath, sessionRoot, pa
 
 func (e *instanceEmitter) Report(s instanceState) error {
 	now := time.Now().UTC()
-	if now.Sub(e.lastAt) < herdrRefresh {
+	if now.Sub(e.lastAt) < heartbeat/2 {
 		return nil
 	}
 	e.report.ReportedAt, e.report.ExpiresAt = now, now.Add(instanceTTL)

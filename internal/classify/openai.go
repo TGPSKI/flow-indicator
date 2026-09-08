@@ -20,15 +20,15 @@ import (
 // PromptVersion versions the one classifier prompt and the context object sent
 // with it. There is one prompt and one schema: prompt variation would make
 // stored classifications incomparable.
-const PromptVersion = "4"
+const PromptVersion = "5"
 
 // Prompt is the whole instruction sent to the model.
 const Prompt = `You label one turn of an operator/agent transcript for a measurement tool.
 
 Return strict JSON only, matching this schema:
 {"segments":[{"label":"","start":0,"end":0}],
- "pointer":{"is_pointer":false,"type":"unknown"},
- "correction":{"is_correction":false,"target_type":"unknown"},
+ "pointer":{"is_pointer":false,"type":"unknown","text":""},
+ "correction":{"is_correction":false,"target_type":"unknown","target_key":""},
  "obligations":[{"key":"","kind":"","text":""}],
  "resolutions":[{"key":"","kind":"","evidence":""}],
  "repair":{"target_repaired":null,"new_scope":0,"new_tasks":0,"new_validation":0,"new_constraints":0},
@@ -36,11 +36,19 @@ Return strict JSON only, matching this schema:
 
 Rules:
 - segment labels: forward_work, new_task, new_evidence, correction, scope_constraint,
-  negative_constraint, positive_constraint, stop_condition, meta_process, handoff,
+  negative_constraint, positive_constraint, stop_condition, meta_process, handoff, handoff_after_failure,
   referent_disambiguation, temporal_disambiguation, namespace_disambiguation,
   restart_reconstruction, restated_prior_state, other.
-- start and end are byte offsets into the turn text.
+- start and end are UTF-8 byte offsets into the decoded turn text, between 0
+  and turn.byte_length inclusive. Never split a UTF-8 character. JSON escape
+  sequences count as their decoded bytes; a trailing newline is one byte.
+- correction target_type and pointer type: node, alias, file, path, task,
+  temporal, quote, namespace, relation, operation, unknown.
 - obligation kinds: stop, scope, negative, positive.
+- A new obligation has key "" and text copied exactly from the turn. The core
+  derives its normalized identity. A nonempty key asserts a semantic repeat:
+  copy exactly the key of one unresolved_obligation_candidates entry. Never
+  invent keys or use display IDs. Independent requirements are not repeats.
 - resolutions report requirements that no longer stand. Each key must be copied
   from unresolved_obligation_candidates. Resolution kinds:
   released (the operator withdrew the requirement),
@@ -97,6 +105,7 @@ type OpenAI struct {
 	Client          *http.Client
 	Markers         Heuristic
 	DisableThinking bool
+	ConstrainedJSON bool
 }
 
 // NewOpenAI returns a classifier for endpoint and model.
@@ -130,16 +139,23 @@ func (o *OpenAI) Hash() string {
 	// Model names are not artifact identities: two local runtimes can expose
 	// the same name with different weights or templates. The endpoint is part
 	// of the classifier identity so those outputs are never silently merged.
-	h := sha256.Sum256([]byte(PromptVersion + "\x00" + o.Endpoint + "\x00" + o.Model + "\x00" + fmt.Sprintf("disable_thinking=%t", o.DisableThinking) + "\x00" + Prompt))
+	h := sha256.Sum256([]byte(PromptVersion + "\x00" + o.Endpoint + "\x00" + o.Model + "\x00" + fmt.Sprintf("disable_thinking=%t,constrained_json=%t", o.DisableThinking, o.ConstrainedJSON) + "\x00" + o.PromptHash()))
 	return hex.EncodeToString(h[:])[:16]
+}
+
+func (o *OpenAI) PromptHash() string {
+	schema, _ := json.Marshal(outputSchema(MaxTurnBytes))
+	h := sha256.Sum256(append([]byte(PromptVersion+"\x00"+Prompt+"\x00"), schema...))
+	return hex.EncodeToString(h[:])
 }
 
 // turnPayload is the context object sent with the prompt.
 type turnPayload struct {
 	Turn struct {
-		Seq     uint64 `json:"seq"`
-		Speaker string `json:"speaker"`
-		Text    string `json:"text"`
+		Seq        uint64 `json:"seq"`
+		Speaker    string `json:"speaker"`
+		Text       string `json:"text"`
+		ByteLength int    `json:"byte_length"`
 	} `json:"turn"`
 	PriorTurns            []string        `json:"prior_turns"`
 	UnresolvedObligations []ObligationRef `json:"unresolved_obligation_candidates"`
@@ -335,6 +351,13 @@ func validate(out modelOutput, text string, outstanding map[string]struct{}) err
 	}
 	obligationKeys := make(map[string]struct{}, len(out.Obligations))
 	for i, ob := range out.Obligations {
+		if ob.Key != "" {
+			if _, ok := outstanding[ob.Key]; !ok {
+				return fmt.Errorf("openai: obligation %d names %q, which is not an outstanding candidate", i, ob.Key)
+			}
+		} else if strings.TrimSpace(ob.Text) == "" || !strings.Contains(text, ob.Text) {
+			return fmt.Errorf("openai: obligation %d text is not a nonempty span of the turn", i)
+		}
 		switch ob.Kind {
 		case ObligationStop, ObligationScope, ObligationNegative, ObligationPositive:
 		default:
@@ -424,6 +447,7 @@ func tile(out modelOutput, text string) []Segment {
 }
 
 type chatRequest struct {
+	ResponseFormat     map[string]any  `json:"response_format,omitempty"`
 	Model              string          `json:"model"`
 	Temperature        float64         `json:"temperature"`
 	Messages           []chatMessage   `json:"messages"`
@@ -447,6 +471,7 @@ func (o *OpenAI) request(ctx context.Context, in Input) ([]byte, error) {
 	payload.Turn.Seq = in.Turn.Seq
 	payload.Turn.Speaker = string(in.Turn.SpeakerClass)
 	payload.Turn.Text = in.Turn.Text
+	payload.Turn.ByteLength = len(in.Turn.Text)
 	payload.PriorTurns = in.PriorOperatorText
 	if len(payload.PriorTurns) > MaxPriorTurns {
 		payload.PriorTurns = payload.PriorTurns[len(payload.PriorTurns)-MaxPriorTurns:]
@@ -468,6 +493,9 @@ func (o *OpenAI) request(ctx context.Context, in Input) ([]byte, error) {
 	}
 	if o.DisableThinking {
 		request.ChatTemplateKwargs = map[string]bool{"enable_thinking": false}
+	}
+	if o.ConstrainedJSON {
+		request.ResponseFormat = map[string]any{"type": "json_schema", "json_schema": map[string]any{"name": "transcript_classification", "strict": true, "schema": outputSchema(len(in.Turn.Text))}}
 	}
 	body, err := json.Marshal(request)
 	if err != nil {

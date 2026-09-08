@@ -15,7 +15,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"reflect"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -126,7 +125,7 @@ Bootstrap reads the source and never writes to it: about 0.2 s on a
                     auto finds the agent pane sharing this pane's tab
   --tail-only       follow from the end, building no state first
   --full            the one-screen audit view, not the side pane
-  --model-details   show model queue, failures, timing and latest error
+  --model-details   add model queues, timing and latest error
   --no-color        no ANSI attributes (NO_COLOR is honoured)
   --width <n>       side-pane inner width in columns
   --adapter <name>  narrow discovery, or decode a file as this
@@ -505,6 +504,7 @@ func semanticClassifierFor(cfg config.Config, rules *profile.Ruleset) (classify.
 	case config.ModeOpenAI, config.ModeHybrid, config.ModeDeferred:
 		cls := classify.NewOpenAI(cfg.Classifier.Endpoint, cfg.Classifier.Model, os.Getenv("FLOW_INDICATOR_API_KEY"))
 		cls.DisableThinking = cfg.Classifier.DisableThinking
+		cls.ConstrainedJSON = cfg.Classifier.ConstrainedJSON
 		cls.Markers = classify.Heuristic{Rules: rules}
 		return cls, nil
 	default:
@@ -706,7 +706,7 @@ func watch(args []string) error {
 	tailOnly := fs.Bool("tail-only", false, "follow from the end instead of building state first")
 	fromStart := fs.Bool("from-start", false, "read the file from the beginning instead of its end")
 	full := fs.Bool("full", false, "draw the one-screen view instead of the side-pane meter")
-	modelDetails := fs.Bool("model-details", false, "show model queue, failures, timing and latest error")
+	modelDetails := fs.Bool("model-details", false, "add model queues, timing and latest error")
 	noColor := fs.Bool("no-color", false, "draw without ANSI attributes")
 	width := fs.Int("width", 0, "side-pane inner width in columns")
 	offset := fs.Int64("offset", stream.TailFromEnd, "byte offset to start reading at; state is built from that byte forward, not restored")
@@ -905,6 +905,12 @@ func useColor(noColor bool) bool {
 // The locator is a file path for the file-backed harnesses and a store
 // reference for the others; only the former is made absolute.
 func watchFile(ctx context.Context, cfg config.Config, root, harnessName string, cls classify.Classifier, locator, streamID, sessionRoot string, offset int64, force bool, view display) error {
+	return watchFileWithBuilder(ctx, cfg, root, harnessName, cls, locator, streamID, sessionRoot, offset, force, view, buildProjection)
+}
+
+type projectionBuilder func(uint64, config.Config, string, *classify.Hybrid, []stream.Record, []classify.Completion, []event.Event, int) projectionResult
+
+func watchFileWithBuilder(ctx context.Context, cfg config.Config, root, harnessName string, cls classify.Classifier, locator, streamID, sessionRoot string, offset int64, force bool, view display, build projectionBuilder) error {
 	abs := locator
 	if !strings.Contains(locator, "#") {
 		var err error
@@ -923,6 +929,7 @@ func watchFile(ctx context.Context, cfg config.Config, root, harnessName string,
 		return err
 	}
 	defer src.Close()
+	position, mark := src.Position(), src.Mark()
 	session, err := store.OpenSession(root, id, force)
 	if err != nil {
 		return err
@@ -941,21 +948,41 @@ func watchFile(ctx context.Context, cfg config.Config, root, harnessName string,
 	displayProjector := projector
 	hybrid, _ := cls.(*classify.Hybrid)
 	if hybrid != nil {
-		defer hybrid.Close()
+		defer func() {
+			_ = hybrid.Close()
+			_, _ = appendSemanticCompletions(session, hybrid, true)
+		}()
 	}
 	var records []stream.Record
 	var completions []classify.Completion
-	lastProjectionKey := ""
-	appendProjection := func(projection []event.Event) error {
-		identity := semanticProjectionIdentity(completions)
-		key := fmt.Sprintf("%d:%s", projector.Seq(), identity)
-		if key == lastProjectionKey {
-			return nil
+	var projectedEvents []event.Event
+	var version uint64
+	var running bool
+	var selected int
+	var publishedVersion uint64
+	results := make(chan projectionResult, 1)
+	requestProjection := func() {
+		if running || version == publishedVersion || cfg.Classifier.Mode != config.ModeHybrid || !hasCompleted(completions) {
+			return
 		}
-		if err := appendSemanticProjection(session, projector, completions, projection); err != nil {
+		running = true
+		rr := append([]stream.Record(nil), records...)
+		cc := append([]classify.Completion(nil), completions...)
+		base := append([]event.Event(nil), projectedEvents...)
+		v, prior := version, selected
+		go func() { results <- build(v, cfg, id, hybrid, rr, cc, base, prior) }()
+	}
+	publish := func(r projectionResult) error {
+		if r.err != nil {
+			return r.err
+		}
+		if err := session.AppendAll(r.updates); err != nil {
 			return err
 		}
-		lastProjectionKey = key
+		displayProjector, projectedEvents = r.p, r.events
+		hybrid.RecordProjection(r.selected-selected, r.changed)
+		selected = r.selected
+		publishedVersion = r.version
 		return nil
 	}
 	flushSemantic := func(final bool) error {
@@ -971,44 +998,31 @@ func watchFile(ctx context.Context, cfg config.Config, root, harnessName string,
 		if err != nil {
 			return err
 		}
-		priorCompletions := append([]classify.Completion(nil), completions...)
 		completions = append(completions, added...)
-		if cfg.Classifier.Mode != config.ModeHybrid || !hasCompleted(added) {
+		if hasCompleted(added) {
+			version++
+		}
+		if !final {
+			requestProjection()
 			return nil
 		}
-		priorState, _, err := semanticProjection(cfg, id, hybrid, records, priorCompletions)
-		if err != nil {
-			return err
-		}
-		changedCount := 0
-		selected := priorCompletions
-		for _, completion := range added {
-			if completion.Status != classify.CompletionCompleted || completion.Result == nil {
-				continue
+		if running {
+			r := <-results
+			running = false
+			if r.version == version {
+				return publish(r)
 			}
-			selected = append(selected, completion)
-			next, _, err := semanticProjection(cfg, id, hybrid, records, selected)
-			if err != nil {
-				return err
-			}
-			if !reflect.DeepEqual(priorState.Snapshot(), next.Snapshot()) {
-				changedCount++
-			}
-			priorState = next
 		}
-		semanticState, projection, err := semanticProjection(cfg, id, hybrid, records, completions)
-		if err != nil {
-			return err
+		if publishedVersion != version && cfg.Classifier.Mode == config.ModeHybrid && hasCompleted(completions) {
+			return publish(build(version, cfg, id, hybrid, records, completions, projectedEvents, selected))
 		}
-		displayProjector = semanticState
-		hybrid.RecordProjection(completedCount(added), changedCount)
-		return appendProjection(projection)
+		return nil
 	}
 	stop := func() error {
 		if err := flushSemantic(true); err != nil {
 			return err
 		}
-		return stopWatch(session, projector, abs, harnessName, src.Position(), src.Mark())
+		return stopWatch(session, displayProjector, abs, harnessName, position, mark)
 	}
 	screen := panel.NewScreen(os.Stdout)
 	// The view hides the cursor while it holds the screen; the terminal gets
@@ -1045,7 +1059,7 @@ func watchFile(ctx context.Context, cfg config.Config, root, harnessName string,
 			Snapshot: displayProjector.Snapshot(),
 			Elapsed:  panel.ShortSpan(live.elapsed()),
 			Trend:    live.trend.Text(),
-			Mark:     src.Mark(),
+			Mark:     mark,
 		})
 
 		var semantic *classify.Operational
@@ -1094,6 +1108,20 @@ func watchFile(ctx context.Context, cfg config.Config, root, harnessName string,
 			live.pulse++
 			draw()
 
+		case r := <-results:
+			running = false
+			if r.version == version {
+				if err := publish(r); err != nil {
+					return err
+				}
+				if err := session.Flush(); err != nil {
+					return err
+				}
+				draw()
+			} else {
+				requestProjection()
+			}
+
 		case c, ok := <-arrivals:
 			if !ok {
 				live.stopped = true
@@ -1109,7 +1137,11 @@ func watchFile(ctx context.Context, cfg config.Config, root, harnessName string,
 				return c.err
 			}
 			for _, rec := range c.records {
+				if hybrid != nil {
+					hybrid.SetBootstrap(src.Historical(rec))
+				}
 				events := projector.Push(ctx, rec)
+				projectedEvents = append(projectedEvents, events...)
 				if err := session.AppendAll(events); err != nil {
 					return err
 				}
@@ -1119,18 +1151,10 @@ func watchFile(ctx context.Context, cfg config.Config, root, harnessName string,
 				live.readEvents(events)
 				records = append(records, rec)
 			}
+			version++
+			position, mark = c.position, c.mark
 			if err := flushSemantic(false); err != nil {
 				return err
-			}
-			if cfg.Classifier.Mode == config.ModeHybrid && hasCompleted(completions) {
-				semanticState, projection, err := semanticProjection(cfg, id, hybrid, records, completions)
-				if err != nil {
-					return err
-				}
-				displayProjector = semanticState
-				if err := appendProjection(projection); err != nil {
-					return err
-				}
 			}
 			if err := session.Flush(); err != nil {
 				return err
@@ -1324,37 +1348,39 @@ func liveSemantic(s *classify.Operational) *classify.Operational { return s }
 // update selects completed results. The completion remains the evidence; the
 // update is a disposable reading of that evidence.
 func appendSemanticCompletions(session *store.Session, hybrid *classify.Hybrid, final bool) ([]classify.Completion, error) {
-	var appended []classify.Completion
-	appendOne := func(c classify.Completion) error {
-		e := event.NewWithIdentity(c.StreamID, c.Seq, c.Epoch, c.Source,
-			event.KindSemanticCompleted, event.ClassClassified, c.JobID, c)
-		if err := session.Append(e); err != nil {
-			return err
-		}
-		appended = append(appended, c)
-		return nil
-	}
+	// Drain the delivery channel to let workers advance; the ledger also retains
+	// outcomes completed during cancellation, when channel delivery can stop.
 	if final {
-		for c := range hybrid.Results() {
-			if err := appendOne(c); err != nil {
-				return nil, err
+		for range hybrid.Results() {
+		}
+	} else {
+		draining := true
+		for draining {
+			select {
+			case _, ok := <-hybrid.Results():
+				if !ok {
+					draining = false
+				}
+			default:
+				draining = false
 			}
 		}
-		return appended, nil
 	}
-	for {
-		select {
-		case c, ok := <-hybrid.Results():
-			if !ok {
-				return appended, nil
-			}
-			if err := appendOne(c); err != nil {
-				return nil, err
-			}
-		default:
-			return appended, nil
+	var appended []classify.Completion
+	for _, c := range hybrid.Worker.DrainEvidence() {
+		kind := event.KindSemanticCompleted
+		if c.Status == classify.CompletionPending || c.Status == classify.CompletionDropped {
+			kind = event.KindSemanticDisposition
+		}
+		e := event.NewWithIdentity(c.StreamID, c.Seq, c.Epoch, c.Source, kind, event.ClassClassified, fmt.Sprintf("%s:%s:%t", c.JobID, c.Status, c.Requested), c)
+		if err := session.Append(e); err != nil {
+			return nil, err
+		}
+		if kind == event.KindSemanticCompleted {
+			appended = append(appended, c)
 		}
 	}
+	return appended, nil
 }
 
 // semanticOverlay replays source records in source order, selecting a completed
@@ -1406,6 +1432,10 @@ func semanticProjection(cfg config.Config, streamID string, hybrid *classify.Hyb
 		if c.Status != classify.CompletionCompleted || c.Result == nil {
 			continue
 		}
+		semantic := hybrid.Semantic()
+		if c.Classifier != semantic.Name() || c.ClassifierVersion != semantic.Version() || c.ClassifierHash != semantic.Hash() {
+			return nil, nil, fmt.Errorf("semantic projection: completion %s classifier identity does not match configured classifier", c.JobID)
+		}
 		if _, duplicate := results[c.Seq]; duplicate {
 			return nil, nil, fmt.Errorf("semantic projection: multiple completed results for source sequence %d", c.Seq)
 		}
@@ -1418,16 +1448,6 @@ func semanticProjection(cfg config.Config, streamID string, hybrid *classify.Hyb
 		out = append(out, p.Push(context.Background(), rec)...)
 	}
 	return p, out, nil
-}
-
-// appendSemanticProjection records the selected view after either a semantic
-// completion or a later source record changed the source-ordered reading.
-func appendSemanticProjection(session *store.Session, source *state.Projector, completions []classify.Completion, projection []event.Event) error {
-	identity := semanticProjectionIdentity(completions)
-	update := event.NewWithIdentity(source.StreamID(), source.Seq(), source.Epoch(),
-		stream.SourceRef{Adapter: "projector"}, event.KindSemanticProjectionUpdated,
-		event.ClassDerived, identity, state.SemanticProjectionUpdate{Events: projection})
-	return session.Append(update)
 }
 
 func semanticProjectionIdentity(completions []classify.Completion) string {
@@ -1465,8 +1485,10 @@ func microWidth(view display) int {
 
 // arrival is one delivery from the live source.
 type arrival struct {
-	records []stream.Record
-	err     error
+	records  []stream.Record
+	err      error
+	position int64
+	mark     string
 }
 
 // readLive moves the blocking read off the draw loop, so the view can repaint
@@ -1481,7 +1503,7 @@ func readLive(ctx context.Context, s harness.Live) <-chan arrival {
 		for {
 			records, err := s.Next(ctx)
 			select {
-			case out <- arrival{records: records, err: err}:
+			case out <- arrival{records: records, err: err, position: s.Position(), mark: s.Mark()}:
 			case <-ctx.Done():
 				return
 			}
@@ -1512,8 +1534,23 @@ func watchStdin(ctx context.Context, cfg config.Config, root, harnessName string
 		return err
 	}
 	projector := state.New(cfg, cls, id)
+	hybrid, _ := cls.(*classify.Hybrid)
+	if hybrid != nil {
+		hybrid.SetBootstrap(true)
+		defer hybrid.Close()
+	}
 	for _, rec := range records {
 		if err := session.AppendAll(projector.Push(ctx, rec)); err != nil {
+			session.Close()
+			return err
+		}
+	}
+	if hybrid != nil {
+		if err := hybrid.Close(); err != nil {
+			session.Close()
+			return err
+		}
+		if _, err := appendSemanticCompletions(session, hybrid, true); err != nil {
 			session.Close()
 			return err
 		}

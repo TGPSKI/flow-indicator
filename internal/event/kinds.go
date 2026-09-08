@@ -71,9 +71,10 @@ const (
 	// open when the observer stopped. It is derived, and it settles nothing:
 	// each count is a question the source never answered.
 	KindStateAtObservationStop = "state_at_observation_stop"
-	// KindSemanticProjectionUpdated records the complete source-ordered
-	// projection selected by semantic results received so far.
+	// KindSemanticProjectionUpdated commits bounded projection delta parts.
 	KindSemanticProjectionUpdated = "semantic_projection_updated"
+	KindSemanticProjectionDelta   = "semantic_projection_delta"
+	KindSemanticDisposition       = "semantic_disposition"
 
 	// Derived.
 	KindMetricsComputed = "metrics_computed"

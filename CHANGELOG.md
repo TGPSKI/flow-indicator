@@ -5,6 +5,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Hybrid watch rebuilds semantic projections off the ingestion loop, coalesces
+  obsolete work, and commits bounded deltas instead of copying event history.
+- Every eligible hybrid/deferred record has a durable disposition. Bootstrap
+  uses markers across all harnesses; semantic queues serve new arrivals.
+  Timeouts are terminal and queued work is recorded as canceled on shutdown.
+- Semantic prompt version 5 uses lowercase context fields, explicit byte
+  lengths and correction targets, source-derived new obligation keys, and
+  exact outstanding keys for semantic repeats. `classifier.constrained_json`
+  enables JSON-schema decoding on supporting endpoints.
+- The full view shows validated/eligible coverage, failures, candidate inventory,
+  dereference unknowns, recovery status and observed expansion counts.
+- Forced watches remove stale projections before drawing. Instance records
+  refresh on the one-second heartbeat independently of sidebar TTL refresh.
+- Calibration records include the profile hash and semantic prompt hash.
+
 ### Added
 
 - .agents/skills/user-onboarding/SKILL.md guides local installation and later

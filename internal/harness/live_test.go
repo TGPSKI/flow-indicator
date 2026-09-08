@@ -137,6 +137,9 @@ func TestCodexTailEmitsEachRecordOnce(t *testing.T) {
 	if len(first) != 1 || first[0].Text != "add the retry loop to worker/retry.go" {
 		t.Fatalf("first read returned %d records, want the one operator turn", len(first))
 	}
+	if !live.Historical(first[0]) {
+		t.Fatal("bootstrap record marked live")
+	}
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -158,6 +161,9 @@ func TestCodexTailEmitsEachRecordOnce(t *testing.T) {
 		rest = append(rest, recs...)
 	}
 	for _, r := range rest {
+		if live.Historical(r) {
+			t.Fatal("new arrival marked historical")
+		}
 		if r.Text == "add the retry loop to worker/retry.go" {
 			t.Error("the first operator turn was delivered a second time")
 		}
@@ -258,6 +264,9 @@ func TestOpenCodeFollowHoldsBackTheMessageStillBeingWritten(t *testing.T) {
 	if !first[0].IsOperatorTurn() {
 		t.Fatalf("first record is not the operator turn: %+v", first[0])
 	}
+	if !live.Historical(first[0]) {
+		t.Fatal("database bootstrap record marked live")
+	}
 
 	// The agent finishes its message and the operator speaks again.
 	opencodeExec(t, db, `INSERT INTO part VALUES ('p3','m2','ses_test1',2100,2100,
@@ -284,6 +293,9 @@ func TestOpenCodeFollowHoldsBackTheMessageStillBeingWritten(t *testing.T) {
 	}
 	if rest[1].Text != "no, revert that" {
 		t.Errorf("last record is %q, want the second operator turn", rest[1].Text)
+	}
+	if live.Historical(rest[1]) {
+		t.Fatal("database live turn marked historical")
 	}
 	// Nothing may arrive twice.
 	seen := map[string]int{}

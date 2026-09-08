@@ -323,11 +323,11 @@ func Live(v LiveView) string {
 	add(heroRow("EVENTS", eventNote(v), v))
 	if v.Status.Semantic != nil {
 		add(heroRow("MODEL", semanticUse(v.Status.Semantic), v))
+		if failures := semanticFailures(v.Status.Semantic); failures != "" {
+			add(heroRow("MODEL FAIL", failures, v))
+		}
 		if v.Status.ModelDetails {
 			add(heroRow("MODEL JOBS", semanticStatus(v.Status.Semantic), v))
-			if failures := semanticFailures(v.Status.Semantic); failures != "" {
-				add(heroRow("MODEL FAIL", failures, v))
-			}
 			if timing := semanticTiming(v.Status.Semantic); timing != "" {
 				add(heroRow("MODEL TIME", timing, v))
 			}
@@ -495,8 +495,8 @@ func semanticStatus(s *classify.Operational) string {
 		coverage = fmt.Sprintf("%d answers", s.Completed)
 	}
 	parts := []string{coverage}
-	if s.Pending > 0 {
-		parts = append(parts, fmt.Sprintf("%d active", s.Pending))
+	if active := s.Pending - s.CatchUp; active > 0 {
+		parts = append(parts, fmt.Sprintf("%d active", active))
 	}
 	if s.CatchUp > 0 {
 		parts = append(parts, fmt.Sprintf("%d catching up", s.CatchUp))
@@ -513,16 +513,13 @@ func semanticFailures(s *classify.Operational) string {
 		parts = append(parts, fmt.Sprintf("%d timed out", s.TimedOut))
 	}
 	if s.Dropped > 0 {
-		parts = append(parts, fmt.Sprintf("%d lost", s.Dropped))
+		parts = append(parts, fmt.Sprintf("%d dropped", s.Dropped))
 	}
 	return strings.Join(parts, " · ")
 }
 
 func semanticUse(s *classify.Operational) string {
-	if s.Applied == 0 {
-		return "0/0 changed"
-	}
-	return fmt.Sprintf("%d/%d changed", s.Changed, s.Applied)
+	return fmt.Sprintf("%d/%d validated · %d changed", s.Completed, s.Eligible, s.Changed)
 }
 
 func semanticTiming(s *classify.Operational) string {
@@ -608,7 +605,6 @@ func metricRows(s metrics.Snapshot, t config.Thresholds) []panel.Row {
 	baseNum, baseUnit := splitValue(s.BaselineChars)
 	cpbNum, cpbUnit := splitPercent(s.ControlBurden)
 	fwdNum, fwdUnit := splitPercent(s.ForwardShare)
-	drpNum, drpUnit := splitPercent(s.Dereference)
 
 	// Three different facts share one column here, and the row is only honest if
 	// they read differently.
@@ -619,12 +615,19 @@ func metricRows(s metrics.Snapshot, t config.Thresholds) []panel.Row {
 	// glyph would then stand on every turn of the session and read as a
 	// measurement that kept coming back unknown, when nothing was measured. That
 	// case says so instead.
-	pollution := panel.Cell{ID: "pollution", Numeric: unknownGlyph}
+	pollution := panel.Cell{ID: "pollution", Detail: "unknown"}
 	switch {
 	case !can(s, classify.CapVerifiedRepair):
 		pollution = panel.Cell{ID: "pollution", Detail: "not measured here"}
 	case s.PollutionStatus != "" && s.PollutionStatus != metrics.PollutionUnknown:
 		pollution = panel.Cell{ID: "pollution", Detail: s.PollutionStatus}
+	}
+	recovery := "latest " + orGlyph(s.RepairStatus)
+	if s.RepairStatus == "open" {
+		recovery = "active open"
+	}
+	if s.RepairID == "" {
+		recovery = "none"
 	}
 
 	return []panel.Row{
@@ -638,23 +641,22 @@ func metricRows(s metrics.Snapshot, t config.Thresholds) []panel.Row {
 			{ID: "forward", Numeric: fwdNum, Unit: fwdUnit, Detail: "forward"},
 		}},
 		{Label: "Obligations", Tail: "D", Cells: []panel.Cell{
-			{ID: "unresolved", Numeric: panel.Compact(s.UnresolvedObligations), Detail: "unresolved"},
+			{ID: "unresolved", Numeric: panel.Compact(s.UnresolvedObligations), Detail: "candidate inventory"},
 			{ID: "new", Numeric: "+" + panel.Compact(s.NewObligations), Detail: "new"},
 			{ID: "repeated", Numeric: panel.Compact(s.RepeatedObligations), Detail: "repeated"},
 		}},
 		{Label: "Dereference", Tail: "D", Cells: []panel.Cell{
-			{ID: "drp", Numeric: drpNum, Unit: drpUnit, Detail: "DRP"},
-			{ID: "missed", Numeric: panel.Compact(s.PointerFailure), Detail: "missed"},
-			{ID: "resolved", Numeric: panel.Compact(s.PointerSuccess), Detail: "resolved"},
+			{ID: "drp", Numeric: fmt.Sprintf("%d/%d", s.PointerSuccess, s.PointerSuccess+s.PointerFailure), Detail: "resolved"},
+			{ID: "unknown", Numeric: panel.Compact(s.PointerUnknown), Detail: "unknown"},
 		}},
 		{Label: "Recovery", Tail: "D", Cells: []panel.Cell{
-			{ID: "depth", Numeric: panel.Compact(s.RepairDepth), Detail: "depth"},
+			{ID: "depth", Numeric: panel.Compact(s.RepairDepth), Detail: "depth · " + recovery},
 			{ID: "repair_chars", Numeric: panel.Compact(s.RepairChars), Detail: "chars"},
 			{ID: "repair_records", Numeric: panel.Compact(s.RepairRecords), Detail: "records"},
 		}},
 		{Label: "Pollution", Tail: "C", Cells: []panel.Cell{
 			pollution,
-			{ID: "expansions", Numeric: "+" + panel.Compact(s.Expansions), Detail: "expansions"},
+			{ID: "expansions", Numeric: panel.Compact(s.Expansions), Detail: "observed expansions"},
 		}},
 	}
 }

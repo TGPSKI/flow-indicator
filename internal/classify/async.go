@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"sync"
 	"time"
@@ -33,6 +34,7 @@ type Job struct {
 	ClassifierHash    string
 	Attempt           int
 	input             Input
+	marker            *Result
 }
 
 // Completion is the durable, auditable result of one semantic job. Result is
@@ -53,6 +55,10 @@ type Completion struct {
 	Error             string           `json:"error,omitempty"`
 	LatencyMS         int64            `json:"latency_ms"`
 	Attempt           int              `json:"attempt,omitempty"`
+	Requested         bool             `json:"requested,omitempty"`
+	Changed           bool             `json:"changed,omitempty"`
+	OperatorTurn      bool             `json:"operator_turn"`
+	Confidence        *float64         `json:"confidence"`
 }
 
 const (
@@ -60,11 +66,14 @@ const (
 	CompletionFailed    = "failed"
 	CompletionTimedOut  = "timed_out"
 	CompletionCanceled  = "canceled"
+	CompletionPending   = "pending"
+	CompletionDropped   = "dropped"
 )
 
 // Operational is a point-in-time view of the semantic lane. It describes the
 // measurement apparatus and must never enter a regime comparison.
 type Operational struct {
+	Eligible   int    `json:"eligible"`
 	Requested  int    `json:"requested"`
 	Completed  int    `json:"completed"`
 	Failed     int    `json:"failed"`
@@ -93,11 +102,13 @@ type Worker struct {
 	cancel     context.CancelFunc
 	wg         sync.WaitGroup
 
-	mu      sync.Mutex
-	closed  bool
-	stats   Operational
-	latency []int64
-	catchUp []Job
+	mu         sync.Mutex
+	closed     bool
+	stats      Operational
+	latency    []int64
+	catchUp    []Job
+	evidence   []Completion
+	unfinished map[string]Completion
 }
 
 // NewWorker starts a bounded semantic worker pool.
@@ -129,6 +140,7 @@ func NewWorkerWithDeadline(classifier Classifier, workers, queue int, deadline t
 		results:    make(chan Completion, workers),
 		ctx:        ctx,
 		cancel:     cancel,
+		unfinished: make(map[string]Completion),
 	}
 	for range workers {
 		w.wg.Add(1)
@@ -145,24 +157,36 @@ func NewWorkerWithDeadline(classifier Classifier, workers, queue int, deadline t
 // active overflow enters the bounded catch-up lane, and only overflow beyond
 // both bounds is lost.
 func (w *Worker) Submit(streamID string, epoch uint64, in Input) (Job, error) {
+	return w.submit(streamID, epoch, in, nil)
+}
+
+func (w *Worker) submit(streamID string, epoch uint64, in Input, marker *Result) (Job, error) {
 	job := newJob(streamID, epoch, in, w.classifier)
+	job.marker = marker
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.closed {
 		return Job{}, errors.New("semantic worker: submit after close")
 	}
+	c := completionFor(job)
+	c.Status = CompletionPending
+	w.stats.Eligible++
 	select {
 	case w.jobs <- job:
-		w.stats.Requested++
+		w.evidence = append(w.evidence, c)
+		w.unfinished[job.ID] = c
 		w.stats.Pending++
 		return job, nil
 	default:
 		if len(w.catchUp) >= cap(w.jobs) {
 			w.stats.Dropped++
-			return Job{}, ErrSemanticQueueFull
+			c.Status, c.Requested, c.Error = CompletionDropped, false, "semantic queues full"
+			w.evidence = append(w.evidence, c)
+			return job, ErrSemanticQueueFull
 		}
+		w.evidence = append(w.evidence, c)
+		w.unfinished[job.ID] = c
 		w.catchUp = append(w.catchUp, job)
-		w.stats.Requested++
 		w.stats.CatchUp++
 		return job, nil
 	}
@@ -172,11 +196,45 @@ func (w *Worker) Submit(streamID string, epoch uint64, in Input) (Job, error) {
 // order when applying them to a deterministic replay.
 func (w *Worker) Results() <-chan Completion { return w.results }
 
+func completionFor(job Job) Completion {
+	return Completion{JobID: job.ID, StreamID: job.StreamID, Seq: job.Seq,
+		OperatorTurn: job.input.Turn.IsOperatorTurn(),
+		Epoch:        job.Epoch, Source: job.Source, InputHash: job.InputHash,
+		Classifier: job.Classifier, ClassifierVersion: job.ClassifierVersion,
+		ClassifierHash: job.ClassifierHash}
+}
+
+// DrainEvidence transfers immutable dispositions and outcomes to the event writer.
+func (w *Worker) DrainEvidence() []Completion {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	out := w.evidence
+	w.evidence = nil
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Seq != out[j].Seq {
+			return out[i].Seq < out[j].Seq
+		}
+		return out[i].Status == CompletionPending && out[j].Status != CompletionPending
+	})
+	return out
+}
+
+func (w *Worker) Drop(streamID string, epoch uint64, in Input, reason string) {
+	c := completionFor(newJob(streamID, epoch, in, w.classifier))
+	c.Status, c.Error = CompletionDropped, reason
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.stats.Eligible++
+	w.stats.Dropped++
+	w.evidence = append(w.evidence, c)
+}
+
 // Snapshot returns counters for a live view. It contains no model judgement.
 func (w *Worker) Snapshot() Operational {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	out := w.stats
+	out.Pending += out.CatchUp
 	if len(w.latency) == 0 {
 		return out
 	}
@@ -199,6 +257,17 @@ func (w *Worker) Close() error {
 	w.mu.Unlock()
 	w.wg.Wait()
 	w.mu.Lock()
+	ids := make([]string, 0, len(w.unfinished))
+	for id := range w.unfinished {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		c := w.unfinished[id]
+		c.Status, c.Error = CompletionCanceled, "observer stopped before completion"
+		w.evidence = append(w.evidence, c)
+	}
+	w.unfinished = make(map[string]Completion)
 	// Jobs still buffered when shutdown begins never reached a classifier. They
 	// are cancellations, not pending work after the watcher has ended.
 	if w.stats.Pending > 0 || w.stats.CatchUp > 0 {
@@ -218,12 +287,24 @@ func (w *Worker) run() {
 		case <-w.ctx.Done():
 			return
 		case job := <-w.jobs:
+			if w.ctx.Err() != nil {
+				return
+			}
+			w.mu.Lock()
+			pending := w.unfinished[job.ID]
+			pending.Requested = true
+			w.unfinished[job.ID] = pending
+			w.evidence = append(w.evidence, pending)
+			w.stats.Requested++
+			w.mu.Unlock()
 			started := time.Now()
 			jobCtx, cancel := w.jobContext()
 			res, err := w.classifier.Classify(jobCtx, job.input)
 			cancel()
 			completion := Completion{
-				JobID: job.ID, StreamID: job.StreamID, Seq: job.Seq, Epoch: job.Epoch,
+				OperatorTurn: job.input.Turn.IsOperatorTurn(),
+				Requested:    true,
+				JobID:        job.ID, StreamID: job.StreamID, Seq: job.Seq, Epoch: job.Epoch,
 				Source: job.Source, InputHash: job.InputHash,
 				Classifier: job.Classifier, ClassifierVersion: job.ClassifierVersion, ClassifierHash: job.ClassifierHash,
 				LatencyMS: time.Since(started).Milliseconds(), Attempt: job.Attempt,
@@ -231,6 +312,13 @@ func (w *Worker) run() {
 			switch {
 			case err == nil:
 				completion.Status, completion.Result = CompletionCompleted, &res
+				completion.Confidence = &res.Confidence
+				if job.marker != nil {
+					a, b := *job.marker, res
+					a.Provenance, b.Provenance = Provenance{}, Provenance{}
+					a.Confidence, b.Confidence = 0, 0
+					completion.Changed = !reflect.DeepEqual(a, b)
+				}
 			case errors.Is(err, context.DeadlineExceeded):
 				completion.Status, completion.Error = CompletionTimedOut, err.Error()
 			case errors.Is(err, context.Canceled):
@@ -239,9 +327,6 @@ func (w *Worker) run() {
 				completion.Status, completion.Error = CompletionFailed, err.Error()
 			}
 			w.record(completion)
-			if completion.Status == CompletionTimedOut && job.Attempt == 0 {
-				w.retry(job)
-			}
 			w.promoteCatchUp()
 			select {
 			case w.results <- completion:
@@ -262,6 +347,9 @@ func (w *Worker) jobContext() (context.Context, context.CancelFunc) {
 func (w *Worker) record(c Completion) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	c.Requested = true
+	w.evidence = append(w.evidence, c)
+	delete(w.unfinished, c.JobID)
 	if w.stats.Pending > 0 {
 		w.stats.Pending--
 	}
@@ -285,20 +373,6 @@ func (w *Worker) record(c Completion) {
 	}
 }
 
-func (w *Worker) retry(job Job) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	job.Attempt++
-	job.ID = retryJobID(job)
-	if len(w.catchUp) >= cap(w.jobs) {
-		w.stats.Dropped++
-		return
-	}
-	w.catchUp = append(w.catchUp, job)
-	w.stats.Requested++
-	w.stats.CatchUp++
-}
-
 func (w *Worker) promoteCatchUp() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -312,12 +386,6 @@ func (w *Worker) promoteCatchUp() {
 		w.stats.Pending++
 	default:
 	}
-}
-
-func retryJobID(job Job) string {
-	seed := job.ID + "\x00" + fmt.Sprintf("%d", job.Attempt)
-	sum := sha256.Sum256([]byte(seed))
-	return hex.EncodeToString(sum[:])[:24]
 }
 
 func percentile(sorted []int64, p int) int64 {
@@ -399,10 +467,11 @@ func cloneRecord(in stream.Record) stream.Record {
 // copy to a semantic worker. Its capabilities intentionally remain those of
 // the marker tier until a selected semantic completion is applied by replay.
 type Hybrid struct {
-	Markers Heuristic
-	Worker  *Worker
-	mu      sync.RWMutex
-	epoch   uint64
+	Markers   Heuristic
+	Worker    *Worker
+	mu        sync.RWMutex
+	epoch     uint64
+	bootstrap bool
 }
 
 func NewHybrid(semantic Classifier, workers, queue int) (*Hybrid, error) {
@@ -429,13 +498,22 @@ func (h *Hybrid) Classify(ctx context.Context, in Input) (Result, error) {
 	if err != nil {
 		return res, err
 	}
-	if in.Turn.Text == "" || !worthSending(in) || len(in.Turn.Text) > MaxTurnBytes {
+	if !worthSending(in) {
 		return res, nil
 	}
 	h.mu.RLock()
 	epoch := h.epoch
+	bootstrap := h.bootstrap
 	h.mu.RUnlock()
-	if _, err := h.Worker.Submit(in.Turn.StreamID, epoch, in); err != nil && !errors.Is(err, ErrSemanticQueueFull) {
+	if bootstrap || in.Turn.Text == "" || len(in.Turn.Text) > MaxTurnBytes {
+		reason := "bootstrap: semantic classification starts at the live tail"
+		if !bootstrap {
+			reason = "turn empty or exceeds semantic byte limit"
+		}
+		h.Worker.Drop(in.Turn.StreamID, epoch, in, reason)
+		return res, nil
+	}
+	if _, err := h.Worker.submit(in.Turn.StreamID, epoch, in, &res); err != nil && !errors.Is(err, ErrSemanticQueueFull) {
 		return res, fmt.Errorf("hybrid: submit semantic job: %w", err)
 	}
 	return res, nil
@@ -446,6 +524,12 @@ func (h *Hybrid) Classify(ctx context.Context, in Input) (Result, error) {
 func (h *Hybrid) SetEpoch(epoch uint64) {
 	h.mu.Lock()
 	h.epoch = epoch
+	h.mu.Unlock()
+}
+
+func (h *Hybrid) SetBootstrap(bootstrap bool) {
+	h.mu.Lock()
+	h.bootstrap = bootstrap
 	h.mu.Unlock()
 }
 

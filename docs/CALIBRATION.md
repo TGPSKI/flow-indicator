@@ -26,6 +26,12 @@ So the loop is built to make the rules falsifiable, not to make them look good:
 
 ## The loop
 
+Hybrid prompt version 5 requires a new configured run. Its run record includes
+`profile_hash`, `prompt_version` and `prompt_sha256` alongside the artifact,
+corpus, labels and classifier identity. Version 4 completions do not establish
+version 5 accuracy. Schema and identity regression tests are implementation
+checks, not human-adjudicated calibration labels.
+
 ```bash
 flow-indicator corpus   --harness claude-code --scan ~/.claude/projects \
                         --build --out corpus/           # sample and split, once

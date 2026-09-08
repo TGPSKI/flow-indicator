@@ -118,7 +118,7 @@ func TestWatchShutdownConcludesNothing(t *testing.T) {
 func TestHybridCompletionUpdatesTheLiveProjection(t *testing.T) {
 	source := filepath.Join(t.TempDir(), "live.jsonl")
 	const text = "Implement the parser."
-	if err := os.WriteFile(source, []byte(`{"speaker":"user","text":"`+text+`"}`+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(source, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := config.Load(writeDefaultConfig(t))
@@ -140,6 +140,10 @@ func TestHybridCompletionUpdatesTheLiveProjection(t *testing.T) {
 	}()
 	// The heartbeat drains and flushes a completed worker result without
 	// requiring a new source record.
+	time.Sleep(100 * time.Millisecond)
+	if err := os.WriteFile(source, []byte(`{"speaker":"user","text":"`+text+`"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	time.Sleep(1200 * time.Millisecond)
 	cancel()
 	if err := <-done; err != nil {

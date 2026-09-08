@@ -33,13 +33,28 @@ type failurePayload struct {
 	Error      string `json:"error"`
 }
 
-// SemanticProjectionUpdate carries a complete source-ordered projection after
-// one or more late semantic results became available. Its events are derived
-// from the source records and the named completion results; the append-only
-// log keeps both the initial marker projection and every later update.
+// SemanticProjectionUpdate commits all parts of one complete reading. Events
+// is read only for legacy logs; new writers emit bounded delta parts.
 type SemanticProjectionUpdate struct {
-	Events []event.Event `json:"events"`
+	Events        []event.Event `json:"events,omitempty"` // Legacy full-history payload.
+	Revision      string        `json:"revision,omitempty"`
+	Parts         int           `json:"parts,omitempty"`
+	CompletionIDs []string      `json:"completion_ids,omitempty"`
+	Applied       int           `json:"applied,omitempty"`
+	Changed       int           `json:"changed,omitempty"`
 }
+
+// SemanticProjectionDelta replaces one source record's projected events. Parts
+// remain invisible until the matching update commits the entire revision.
+type SemanticProjectionDelta struct {
+	Revision  string        `json:"revision"`
+	Part      int           `json:"part"`
+	SourceSeq uint64        `json:"source_seq"`
+	First     bool          `json:"first"`
+	Events    []event.Event `json:"events"`
+}
+
+type SemanticDisposition = classify.Completion
 
 type segmentsPayload struct {
 	Provenance classify.Provenance `json:"provenance"`

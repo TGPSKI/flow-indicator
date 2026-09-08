@@ -43,8 +43,8 @@ func TestPollutionRowSeparatesUnmeasurableFromUnknown(t *testing.T) {
 	if unmeasurable.Numeric == unknown.Numeric && unmeasurable.Detail == unknown.Detail {
 		t.Error("an unmeasurable family renders identically to an unknown measurement")
 	}
-	if unknown.Numeric != unknownGlyph {
-		t.Errorf("an unknown measurement renders %q, want the glyph every other unknown takes", unknown.Numeric)
+	if unknown.Detail != "unknown" {
+		t.Errorf("an unknown measurement renders %q, want unknown", unknown.Detail)
 	}
 	if unmeasurable.Numeric == unknownGlyph {
 		t.Error("an unmeasurable family takes the unknown glyph")

@@ -332,14 +332,15 @@ const opencodePoll = 700 * time.Millisecond
 // never held.
 func (o OpenCode) Follow(s Session, offset int64) (Live, error) {
 	l := &opencodeLive{h: o, session: s, interval: opencodePoll}
+	recs, err := o.Open(s)
+	if err != nil {
+		return nil, err
+	}
+	l.initial = len(recs)
 	switch {
 	case offset == stream.TailFromEnd:
 		// Start from whatever the session already holds and report only what
 		// arrives after it.
-		recs, err := o.Open(s)
-		if err != nil {
-			return nil, err
-		}
 		l.sent = len(recs)
 	case offset > 0:
 		l.sent = int(offset)
@@ -352,6 +353,7 @@ type opencodeLive struct {
 	h        OpenCode
 	session  Session
 	sent     int
+	initial  int
 	interval time.Duration
 }
 
@@ -380,7 +382,8 @@ func (l *opencodeLive) Next(ctx context.Context) ([]stream.Record, error) {
 
 // Position is the count of records handed out. The store addresses messages by
 // key, not by byte, so there is no offset to report.
-func (l *opencodeLive) Position() int64 { return int64(l.sent) }
+func (l *opencodeLive) Position() int64                 { return int64(l.sent) }
+func (l *opencodeLive) Historical(r stream.Record) bool { return r.Seq <= uint64(l.initial) }
 
 // Mark counts records, not bytes: opencode addresses messages by key.
 func (l *opencodeLive) Mark() string {

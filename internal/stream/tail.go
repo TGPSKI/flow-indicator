@@ -21,10 +21,11 @@ const pollInterval = 200 * time.Millisecond
 // It never writes to the source, never re-reads a committed offset, and holds
 // a partial final record until its newline arrives.
 type Tail struct {
-	path    string
-	f       *os.File
-	offset  int64
-	partial []byte
+	path        string
+	f           *os.File
+	offset      int64
+	partial     []byte
+	initialSize int64
 }
 
 // OpenTail opens path for reading, starting at offset. Pass TailFromEnd to
@@ -46,8 +47,10 @@ func OpenTail(path string, offset int64) (*Tail, error) {
 		_ = f.Close()
 		return nil, fmt.Errorf("tail: seek %s to %d: %w", path, offset, err)
 	}
-	return &Tail{path: path, f: f, offset: offset}, nil
+	return &Tail{path: path, f: f, offset: offset, initialSize: info.Size()}, nil
 }
+
+func (t *Tail) InitialSize() int64 { return t.initialSize }
 
 // Offset is the byte offset of the first byte not yet returned as a whole
 // record.

@@ -517,11 +517,44 @@ direction. Three rules bound what is reported:
 
 ## Judgement calls
 
+18. **Hybrid projection updates are deltas, not checkpoints.** A background
+   replay compares the selected reading with the preceding complete reading.
+   Each `semantic_projection_delta` replaces one changed source record's
+   projected events, split into parts targeting 256 KiB. A final
+   `semantic_projection_updated` commits the parts and names newly selected
+   completions. Uncommitted parts are ignored. Source-only arrivals can append
+   changed records but never copy unchanged history. A checkpoint containing
+   all snapshots and inventories was rejected because it repeats growing
+   history. The five event files reproduce all four disposable projections
+   without the source or a model call. Legacy full-history updates remain
+   readable.
+
+   One rebuild runs at a time. Arrivals invalidate an unfinished build; an
+   obsolete result is discarded before publication, then the newest input is
+   rebuilt. The screen keeps the preceding complete reading. Replaying the
+   same records and retained selection produces identical deltas; live receipt
+   timing and coalescing determine which intermediate selections were observed.
+
+19. **Bootstrap uses markers; semantic work starts at the live tail.** Every
+   eligible historical record receives a durable `dropped` disposition with
+   its bootstrap reason. Historical turns never occupy the live queues.
+   File-backed and database-backed harnesses identify their initial boundary
+   through the same interface; classification never reads their formats.
+   A timeout is terminal, with no automatic retry, so one eligible record has
+   one terminal outcome. Coverage describes the instrument and never enters a
+   regime comparison.
+
+20. **Semantic obligation identities come from evidence.** A new candidate
+   returns an empty key and exact source text; the core normalizes that text.
+   A nonempty key asserts a semantic repeat and must copy an outstanding key.
+   Invented keys and display IDs are rejected. Similar wording alone still
+   establishes no identity under the marker tier.
+
 17. **Late semantic evidence can update a named projection.** The original
    marker projection and each semantic completion remain append-only facts.
    In `hybrid` mode, a completed result appends a source-ordered
    `semantic_projection_updated` event built from the completions received so
-   far; the renderer selects its contained projection. This resolves the prior
+   far; the renderer selects its committed projection. This resolves the prior
    contract wording that late results were evidence but never a revision:
    evidence still is not rewritten, while the disposable projection now names
    exactly which evidence changed it. `deferred` retains the former

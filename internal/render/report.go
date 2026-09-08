@@ -70,6 +70,13 @@ type pollutionRecord struct {
 // deliberately separate from interaction measurements: a model timeout says
 // nothing about the measured conversation.
 type SemanticStats struct {
+	Eligible    int      `json:"eligible"`
+	Requested   int      `json:"requested"`
+	Validated   int      `json:"validated"`
+	Dropped     int      `json:"dropped"`
+	Pending     int      `json:"pending"`
+	Applied     int      `json:"applied"`
+	Changed     int      `json:"changed"`
 	Recorded    int      `json:"recorded"`
 	Completed   int      `json:"completed"`
 	Failed      int      `json:"failed"`
@@ -82,16 +89,20 @@ type SemanticStats struct {
 	LastError   string   `json:"last_error,omitempty"`
 	LastSeq     uint64   `json:"last_source_seq,omitempty"`
 
-	latencies []int64
-	seen      map[string]struct{}
+	latencies    []int64
+	seen         map[string]struct{}
+	dispositions map[string]classify.Completion
 }
 
 func (s *SemanticStats) add(c classify.Completion) {
-	s.Recorded++
-	s.LastStatus, s.LastError, s.LastSeq = c.Status, c.Error, c.Seq
-	if c.LatencyMS >= 0 {
-		s.latencies = append(s.latencies, c.LatencyMS)
+	if s.dispositions == nil {
+		s.dispositions = make(map[string]classify.Completion)
 	}
+	prior, exists := s.dispositions[c.JobID]
+	if !exists || prior.Status == classify.CompletionPending {
+		s.dispositions[c.JobID] = c
+	}
+	s.LastStatus, s.LastError, s.LastSeq = c.Status, c.Error, c.Seq
 	if c.Classifier != "" {
 		identity := c.Classifier + "/" + c.ClassifierVersion + "/" + c.ClassifierHash
 		if s.seen == nil {
@@ -101,6 +112,13 @@ func (s *SemanticStats) add(c classify.Completion) {
 			s.seen[identity] = struct{}{}
 			s.Classifiers = append(s.Classifiers, identity)
 		}
+	}
+	if c.Status == classify.CompletionPending || c.Status == classify.CompletionDropped {
+		return
+	}
+	s.Recorded++
+	if c.LatencyMS >= 0 && (c.Requested || c.Status != classify.CompletionCanceled) {
+		s.latencies = append(s.latencies, c.LatencyMS)
 	}
 	switch c.Status {
 	case classify.CompletionCompleted:
@@ -115,13 +133,27 @@ func (s *SemanticStats) add(c classify.Completion) {
 }
 
 func (s *SemanticStats) finish() {
+	for _, c := range s.dispositions {
+		s.Eligible++
+		if c.Requested {
+			s.Requested++
+		}
+		switch c.Status {
+		case classify.CompletionCompleted:
+			s.Validated++
+		case classify.CompletionDropped:
+			s.Dropped++
+		case classify.CompletionPending:
+			s.Pending++
+		}
+	}
+	sort.Strings(s.Classifiers)
 	if len(s.latencies) == 0 {
 		return
 	}
 	sort.Slice(s.latencies, func(i, j int) bool { return s.latencies[i] < s.latencies[j] })
 	p50, p95 := semanticPercentile(s.latencies, 50), semanticPercentile(s.latencies, 95)
 	s.P50MS, s.P95MS = &p50, &p95
-	sort.Strings(s.Classifiers)
 }
 
 func semanticPercentile(sorted []int64, p int) int64 {
@@ -159,12 +191,59 @@ func LoadEvents(events []event.Event) (*Session, error) {
 		return nil, err
 	}
 	var latest state.SemanticProjectionUpdate
+	view := make(map[uint64][]event.Event)
 	for _, e := range events {
+		if e.Kind != event.KindSemanticCompleted && e.Kind != event.KindSemanticDisposition && e.Kind != event.KindSemanticProjectionDelta && e.Kind != event.KindSemanticProjectionUpdated {
+			view[e.Seq] = append(view[e.Seq], e)
+		}
+	}
+	var parts []state.SemanticProjectionDelta
+	deltaApplied := false
+	for _, e := range events {
+		if e.Kind == event.KindSemanticProjectionDelta {
+			var part state.SemanticProjectionDelta
+			if err := json.Unmarshal(e.Payload, &part); err != nil {
+				return nil, fmt.Errorf("render: decode projection delta %s: %w", e.ID, err)
+			}
+			if part.Part == 0 {
+				parts = nil
+			}
+			parts = append(parts, part)
+			continue
+		}
 		if e.Kind != event.KindSemanticProjectionUpdated {
 			continue
 		}
+		latest = state.SemanticProjectionUpdate{}
 		if err := json.Unmarshal(e.Payload, &latest); err != nil {
 			return nil, fmt.Errorf("render: decode semantic projection event %s: %w", e.ID, err)
+		}
+		if latest.Revision != "" {
+			if len(parts) != latest.Parts {
+				return nil, fmt.Errorf("render: projection %s has %d parts, expected %d", latest.Revision, len(parts), latest.Parts)
+			}
+			for i, part := range parts {
+				if part.Revision != latest.Revision || part.Part != i {
+					return nil, fmt.Errorf("render: projection %s part %d does not match commit", latest.Revision, i)
+				}
+				if part.First {
+					view[part.SourceSeq] = nil
+				}
+				view[part.SourceSeq] = append(view[part.SourceSeq], part.Events...)
+			}
+			parts = nil
+			deltaApplied = true
+		}
+	}
+	if deltaApplied {
+		seqs := make([]uint64, 0, len(view))
+		for seq := range view {
+			seqs = append(seqs, seq)
+		}
+		sort.Slice(seqs, func(i, j int) bool { return seqs[i] < seqs[j] })
+		latest.Events = nil
+		for _, seq := range seqs {
+			latest.Events = append(latest.Events, view[seq]...)
 		}
 	}
 	if len(latest.Events) == 0 {
@@ -222,12 +301,19 @@ func loadEvents(events []event.Event) (*Session, error) {
 			}
 		case event.KindCorrectionCandidate:
 			s.Corrections++
-		case event.KindSemanticCompleted:
+		case event.KindSemanticCompleted, event.KindSemanticDisposition:
 			var completion classify.Completion
 			if err := json.Unmarshal(e.Payload, &completion); err != nil {
 				return nil, fmt.Errorf("render: decode semantic completion payload of event %s: %w", e.ID, err)
 			}
 			s.Semantic.add(completion)
+		case event.KindSemanticProjectionUpdated:
+			var update state.SemanticProjectionUpdate
+			if err := json.Unmarshal(e.Payload, &update); err != nil {
+				return nil, err
+			}
+			s.Semantic.Applied += update.Applied
+			s.Semantic.Changed += update.Changed
 		case event.KindObligationRepeated:
 			s.ObligationRepeats++
 			s.absorbState(e)
@@ -398,7 +484,7 @@ func (s *Session) Summarize() Summary {
 	if len(s.PollutionByRepair) > 0 {
 		sum.PollutionByRepair = s.PollutionByRepair
 	}
-	if s.Semantic.Recorded > 0 {
+	if s.Semantic.Eligible > 0 {
 		semantic := s.Semantic
 		semantic.latencies = nil
 		semantic.seen = nil
@@ -462,8 +548,9 @@ func (s *Session) Report() string {
 		fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", r[0], r[1], r[2], r[3])
 	}
 
-	if s.Semantic.Recorded > 0 {
+	if s.Semantic.Eligible > 0 {
 		b.WriteString("\n## semantic operations\n\n")
+		fmt.Fprintf(&b, "Coverage: %d/%d validated; %d requested, %d failed, %d timed out, %d canceled, %d dropped, %d pending; %d applied, %d changed.\n\n", s.Semantic.Validated, s.Semantic.Eligible, s.Semantic.Requested, s.Semantic.Failed, s.Semantic.TimedOut, s.Semantic.Canceled, s.Semantic.Dropped, s.Semantic.Pending, s.Semantic.Applied, s.Semantic.Changed)
 		b.WriteString("These counters describe model work. In hybrid mode, completed answers may update the named semantic projection.\n\n")
 		fmt.Fprintf(&b, "| recorded | completed | failed | timed out | canceled | p50 | p95 |\n|---|---|---|---|---|---|---|\n| %d | %d | %d | %d | %d | %s | %s |\n",
 			s.Semantic.Recorded, s.Semantic.Completed, s.Semantic.Failed, s.Semantic.TimedOut, s.Semantic.Canceled,

@@ -37,12 +37,15 @@ type Options struct {
 // without it, which is why they travel in one structure and are printed
 // together.
 type Report struct {
-	Artifact     string `json:"artifact_sha256"`
-	ManifestHash string `json:"corpus_manifest_sha256"`
-	LabelHash    string `json:"label_set_sha256"`
-	RuleVersion  string `json:"rule_version"`
-	RuleHash     string `json:"rule_hash"`
-	Classifier   string `json:"classifier"`
+	Artifact      string `json:"artifact_sha256"`
+	ManifestHash  string `json:"corpus_manifest_sha256"`
+	LabelHash     string `json:"label_set_sha256"`
+	RuleVersion   string `json:"rule_version"`
+	RuleHash      string `json:"rule_hash"`
+	Classifier    string `json:"classifier"`
+	ProfileHash   string `json:"profile_hash"`
+	PromptVersion string `json:"prompt_version,omitempty"`
+	PromptHash    string `json:"prompt_sha256,omitempty"`
 
 	Split    string   `json:"split"`
 	Sessions []string `json:"sessions"`
@@ -133,6 +136,14 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		Coverage: map[string]Coverage{},
 	}
 
+	switch c := classifier.(type) {
+	case classify.Heuristic:
+		rep.ProfileHash = c.Hash()
+	case *classify.OpenAI:
+		rep.ProfileHash = c.Markers.Hash()
+		rep.PromptVersion = c.Version()
+		rep.PromptHash = c.PromptHash()
+	}
 	for _, family := range []string{
 		labels.FamilyObligation,
 		labels.FamilyObligationPair,

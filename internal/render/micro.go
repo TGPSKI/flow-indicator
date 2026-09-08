@@ -210,12 +210,16 @@ func microFigureW(s metrics.Snapshot) int {
 	return w
 }
 
-// microRepair is the open episode's cost: characters, records, and duration.
+// Status precedes cost so a narrow pane cannot describe a closed repair as active.
 func microRepair(s metrics.Snapshot) string {
 	if s.RepairDepth == 0 {
 		return unknownGlyph
 	}
-	out := fmt.Sprintf("depth %d · %dc / %dt", s.RepairDepth, s.RepairChars, s.RepairRecords)
+	status := "latest " + orUnknown(s.RepairStatus)
+	if s.RepairStatus == "open" {
+		status = "active"
+	}
+	out := fmt.Sprintf("%s · depth %d · %dc / %dt", status, s.RepairDepth, s.RepairChars, s.RepairRecords)
 	if s.RepairSeconds.Known {
 		out += " / " + panel.ShortSeconds(s.RepairSeconds.Num)
 	}
