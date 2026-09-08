@@ -33,6 +33,25 @@ func classifyWith(t *testing.T, body, text string) (Result, error) {
 	return c.Classify(context.Background(), Input{Turn: operator(text)})
 }
 
+func TestDisableThinkingIsExplicitInRequest(t *testing.T) {
+	var got chatRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Error(err)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]string{"content": "{}"}}}})
+	}))
+	defer srv.Close()
+	c := NewOpenAI(srv.URL, "qwen", "")
+	c.DisableThinking = true
+	if _, err := c.request(context.Background(), Input{Turn: operator("test")}); err != nil {
+		t.Fatal(err)
+	}
+	if enabled, ok := got.ChatTemplateKwargs["enable_thinking"]; !ok || enabled {
+		t.Fatalf("chat_template_kwargs = %#v, want enable_thinking false", got.ChatTemplateKwargs)
+	}
+}
+
 func TestSemanticSpansRejectOverlap(t *testing.T) {
 	const text = "Revert the workflow. Add the backoff test."
 	body := `{"segments":[{"label":"correction","start":0,"end":25},{"label":"forward_work","start":20,"end":42}],
@@ -279,5 +298,14 @@ func TestSemanticHashIncludesEndpoint(t *testing.T) {
 	b := NewOpenAI("http://127.0.0.1:9000/v1/chat/completions", "local", "")
 	if a.Hash() == b.Hash() {
 		t.Fatal("two local runtimes with the same model name share classifier provenance")
+	}
+}
+
+func TestSemanticHashIncludesThinkingMode(t *testing.T) {
+	baseline := NewOpenAI("http://127.0.0.1:8000/v1/chat/completions", "qwen", "")
+	direct := NewOpenAI("http://127.0.0.1:8000/v1/chat/completions", "qwen", "")
+	direct.DisableThinking = true
+	if baseline.Hash() == direct.Hash() {
+		t.Fatal("thinking request mode did not change classifier provenance")
 	}
 }

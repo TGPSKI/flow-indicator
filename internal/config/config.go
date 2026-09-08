@@ -18,9 +18,12 @@ const (
 	ModeNone      = "none"
 	ModeHeuristic = "heuristic"
 	ModeOpenAI    = "openai-compatible"
-	// ModeHybrid keeps heuristic projection on the live path and sends a copy
-	// to a bounded local-model worker for deferred semantic evidence.
+	// ModeHybrid updates the live projection when bounded semantic evidence
+	// arrives. The source reader still runs on the marker path.
 	ModeHybrid = "hybrid"
+	// ModeDeferred preserves the original hybrid behavior: semantic results are
+	// retained for a later strict replay but do not update the live projection.
+	ModeDeferred = "deferred"
 )
 
 // Config is the whole configuration file.
@@ -54,12 +57,13 @@ type Thresholds struct {
 
 // Classifier selects how records are interpreted.
 type Classifier struct {
-	Mode           string `json:"mode"`
-	Endpoint       string `json:"endpoint"`
-	Model          string `json:"model"`
-	LiveDeadlineMS int    `json:"live_deadline_ms"`
-	Workers        int    `json:"workers"`
-	MaxQueue       int    `json:"max_queue"`
+	Mode            string `json:"mode"`
+	Endpoint        string `json:"endpoint"`
+	Model           string `json:"model"`
+	LiveDeadlineMS  int    `json:"live_deadline_ms"`
+	Workers         int    `json:"workers"`
+	MaxQueue        int    `json:"max_queue"`
+	DisableThinking bool   `json:"disable_thinking"`
 }
 
 // Privacy bounds what source text is written to disk.
@@ -176,15 +180,15 @@ func (c Config) Validate() error {
 	}
 	switch c.Classifier.Mode {
 	case ModeNone, ModeHeuristic:
-	case ModeOpenAI, ModeHybrid:
+	case ModeOpenAI, ModeHybrid, ModeDeferred:
 		if c.Classifier.Endpoint == "" {
-			return errors.New("config: classifier.endpoint is required when classifier.mode is openai-compatible")
+			return fmt.Errorf("config: classifier.endpoint is required when classifier.mode is %s", c.Classifier.Mode)
 		}
 		if c.Classifier.Model == "" {
-			return errors.New("config: classifier.model is required when classifier.mode is openai-compatible")
+			return fmt.Errorf("config: classifier.model is required when classifier.mode is %s", c.Classifier.Mode)
 		}
 	default:
-		return fmt.Errorf("config: classifier.mode must be none, heuristic, openai-compatible or hybrid, got %q", c.Classifier.Mode)
+		return fmt.Errorf("config: classifier.mode must be none, heuristic, openai-compatible, hybrid or deferred, got %q", c.Classifier.Mode)
 	}
 	return nil
 }

@@ -163,6 +163,7 @@ a restart. See [HERDR.md](HERDR.md).
 | `--herdr-workspace <id\|auto>` | `""` | push the same tokens onto that workspace's space row |
 | `--tail-only` | `false` | follow from the end, building no state first |
 | `--full` | `false` | the one-screen audit view instead of the side-pane meter |
+| `--model-details` | `false` | show model queue, failures, timing and latest error below the compact changed/applied row |
 | `--no-color` | `false` | no ANSI attributes; `NO_COLOR` is honoured |
 | `--width <n>` | `0` | side-pane inner width in columns |
 | `--adapter <name>` | `claude-code` | narrow discovery, or decode a named file as this |
@@ -421,7 +422,7 @@ flow-indicator inspect --session 019ffd5a --turn 19
 
 **Read a finished session more closely than markers allow.** Set
 `classifier.mode` to `openai-compatible` in the config, then `replay`. Leave the
-live pane on `heuristic` or `hybrid`. What that sends and to where:
+live pane on `heuristic`, `hybrid` or `deferred`. What that sends and to where:
 [INFERENCE.md](INFERENCE.md).
 
 **Compare many past sessions.**

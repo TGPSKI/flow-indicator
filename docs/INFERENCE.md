@@ -30,8 +30,9 @@ configured one, whatever it is.
 | suitable for `watch` | in `hybrid`, yes | the deadline is 200 ms by default; a remote round trip will mostly miss it |
 | suitable for `replay` | yes | yes, at one request per eligible turn |
 
-Session classification has no batching, retry or fallback endpoint. One
-eligible turn produces one request, one answer or one recorded failure.
+Session classification has no batching or fallback endpoint. A timed-out live
+request is retried once through the bounded catch-up lane; every attempt is
+recorded separately.
 
 ## Modes
 
@@ -42,7 +43,8 @@ Set `classifier.mode` in the configuration file.
 | `none` | observations only, no classification | — | no |
 | `heuristic` | markers, in source order | — | no |
 | `openai-compatible` | markers, then the model, synchronously | strict, blocking | yes |
-| `hybrid` | markers immediately | bounded background worker | yes |
+| `hybrid` | markers immediately, then a semantic projection update | bounded background worker | yes |
+| `deferred` | markers immediately | bounded background worker retained for later replay | yes |
 
 `heuristic` is the default and the live default.
 
@@ -53,15 +55,20 @@ corrections the heuristic path missed, left the healthy controls quiet, lost a
 THRASH the heuristic path found, and opened a repair episode on a pasted
 document. It is a different reading, not a strictly better one.
 
-**`hybrid` is for `watch`.** The marker tier projects each record immediately;
-eligible records also enter a bounded worker queue. The worker never blocks the
-source reader, the terminal repaint or the event flush.
+**`hybrid` is for `watch` when semantic results should update the reading.**
+The marker tier projects each record immediately; eligible records also enter a
+bounded worker queue. When a validated result arrives, the instrument appends
+it, rebuilds the source-ordered projection from the results received so far,
+and appends a `semantic_projection_updated` derived event. The worker never
+blocks the source reader or terminal repaint.
 
-Late semantic results are stored as classified evidence and **do not revise an
-already-rendered regime**. That is deliberate: letting a network round trip
-mutate state after the fact would make the projection depend on model timing
-rather than on source order. To project them, replay with the retained
-completions — see [Reproducibility](#reproducibility).
+The update selects results in source order, not completion order. Its source
+events and named completions remain in the append-only log, so the live reading
+can change without erasing the marker reading that preceded it.
+
+**`deferred` preserves the former hybrid behavior.** It records completed,
+failed and timed-out semantic work but leaves the live projection on the marker
+path. Replay with retained completions to inspect that evidence later.
 
 ## What is sent
 
@@ -142,18 +149,20 @@ An agent stating it did the thing is a claim, never `satisfied`.
   "model": "your-local-model",
   "live_deadline_ms": 200,
   "workers": 1,
-  "max_queue": 32
+  "max_queue": 32,
+  "disable_thinking": false
 }}
 ```
 
 | key | default | meaning |
 |---|---|---|
-| `mode` | `heuristic` | one of the four above |
-| `endpoint` | `""` | required by `openai-compatible` and `hybrid` |
-| `model` | `""` | required by the same two |
-| `live_deadline_ms` | 200 | per-job deadline in `hybrid`; a job past it is recorded `timed_out` |
-| `workers` | 1 | concurrent semantic jobs; minimum 1 |
-| `max_queue` | 32 | queue depth; minimum 1 |
+| `mode` | `heuristic` | `none`, `heuristic`, `openai-compatible`, `hybrid`, or `deferred` |
+| `endpoint` | `""` | required by `openai-compatible`, `hybrid` and `deferred` |
+| `model` | `""` | required by the same three |
+| `live_deadline_ms` | 200 | per-job deadline in `hybrid` and `deferred`; a job past it is recorded `timed_out` |
+| `workers` | 1 | concurrent semantic jobs in `hybrid` and `deferred`; minimum 1 |
+| `max_queue` | 32 | queue depth in `hybrid` and `deferred`; minimum 1 |
+| `disable_thinking` | false | send vLLM's `chat_template_kwargs.enable_thinking=false`; use when a reasoning model otherwise returns no `message.content` |
 
 The key is read from `FLOW_INDICATOR_API_KEY` and is never a flag. It is used
 only as a bearer token on the configured endpoint, and never reaches a session
@@ -167,18 +176,22 @@ with no endpoint fails at startup rather than quietly classifying with markers.
 The bounds exist so that a slow or absent model degrades the reading and never
 the observation.
 
-- **The queue is bounded.** When it is full a job is dropped, not delayed. A
-  drop is counted and visible; it never delays transcript observation.
-- **Every job has a deadline** in `hybrid`, and every request has the HTTP
+- **Both queues are bounded.** `max_queue` bounds the active queue and a
+  catch-up queue of the same size. Overflow enters catch-up without delaying
+  transcript observation. A job is lost only when both queues are full.
+- **One timeout retry.** A timed-out attempt enters catch-up once. The retry has
+  its own job identity and attempt number; a second timeout is final.
+- **Every job has a deadline** in `hybrid` and `deferred`, and every request has the HTTP
   client's 60 s ceiling in both semantic modes.
 - **Shutdown cancels in flight work.** Jobs still queued when `watch` ends are
   counted as canceled, not pending.
-- **One request per eligible turn.** A rough cloud estimate is therefore the
-  operator turn count plus agent turns inside repairs; `flow-indicator corpus`
-  prints turn counts before you point a metered endpoint at a corpus.
+- **One initial request per eligible turn.** A live timeout can add one retry.
+  `flow-indicator corpus` prints turn counts before you point a metered endpoint
+  at a corpus.
 
-The live view reports requested, completed, pending, failed, timed out, dropped,
-last latency, p50 and p95. These measure the instrument, not the interaction:
+The default live view reports semantic projection changes as `changed/applied`.
+`watch --model-details` also shows active and catch-up work, failures, timeouts,
+lost jobs, latency and the latest error. These measure the instrument, not the interaction:
 **no regime rule reads them**, and they never enter a metric family.
 
 ## Failure behaviour
@@ -197,7 +210,7 @@ The model supplies fields; the deterministic core decides what they mean.
 Every completion names its source sequence and byte offset, the classifier's
 name, version and hash, the response status, the input hash and the latency.
 
-The classifier hash is `sha256(prompt version, endpoint, model, prompt)`
+The classifier hash is `sha256(prompt version, endpoint, model, thinking mode, prompt)`
 truncated to 16 hex characters. **The endpoint is part of the identity on
 purpose**: two local runtimes can expose the same model name with different
 weights or chat templates, and merging those outputs silently would make a
@@ -246,7 +259,7 @@ flow-indicator calibrate --config local-model.json --labels labels/ \
   --manifest corpus/manifest.json --split dev --classifier configured
 ```
 
-Under `classifier.mode: "hybrid"`, configured calibration uses the strict
+Under `classifier.mode: "hybrid"` or `"deferred"`, configured calibration uses the strict
 semantic classifier synchronously: the worker lane is a live-latency mechanism,
 not a fourth interpretation of the corpus. Compare its retained completion
 coverage and operational report separately from accuracy scores.
@@ -265,7 +278,8 @@ an adjudicator accepts or rejects, never ground truth. See
 | situation | mode |
 |---|---|
 | live pane, no model running | `heuristic` |
-| live pane, local model available | `hybrid` |
+| live pane, local model updates wanted | `hybrid` |
+| live pane, retain semantic results for later replay | `deferred` |
 | finished session you want read closely | `openai-compatible` |
 | transcripts you would not send anywhere | `heuristic` or `none` |
 | scoring a rule change | `heuristic` and `configured` as two runs |

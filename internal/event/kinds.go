@@ -25,9 +25,8 @@ const (
 	KindNearRepeatCandidate = "near_repeat_candidate"
 	KindExpansionCandidate  = "repair_expansion_candidate"
 	KindClassifierFailed    = "classifier_failed"
-	// KindSemanticCompleted is a deferred local-model interpretation. It is
-	// persisted as classified evidence but does not mutate the current state
-	// until a deterministic replay selects it.
+	// KindSemanticCompleted is a bounded local-model interpretation retained as
+	// classified evidence.
 	KindSemanticCompleted = "semantic_classification_completed"
 
 	// State transitions over obligations.
@@ -72,6 +71,9 @@ const (
 	// open when the observer stopped. It is derived, and it settles nothing:
 	// each count is a question the source never answered.
 	KindStateAtObservationStop = "state_at_observation_stop"
+	// KindSemanticProjectionUpdated records the complete source-ordered
+	// projection selected by semantic results received so far.
+	KindSemanticProjectionUpdated = "semantic_projection_updated"
 
 	// Derived.
 	KindMetricsComputed = "metrics_computed"

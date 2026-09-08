@@ -156,6 +156,9 @@ func New(cfg config.Config, cls classify.Classifier, streamID string) *Projector
 // StreamID reports the stream the projector is folding.
 func (p *Projector) StreamID() string { return p.streamID }
 
+// Seq reports the last source record accepted by the projector.
+func (p *Projector) Seq() uint64 { return p.seq }
+
 // Snapshot returns the most recent derived state.
 func (p *Projector) Snapshot() metrics.Snapshot { return p.snapshot }
 

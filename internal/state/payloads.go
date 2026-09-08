@@ -33,6 +33,14 @@ type failurePayload struct {
 	Error      string `json:"error"`
 }
 
+// SemanticProjectionUpdate carries a complete source-ordered projection after
+// one or more late semantic results became available. Its events are derived
+// from the source records and the named completion results; the append-only
+// log keeps both the initial marker projection and every later update.
+type SemanticProjectionUpdate struct {
+	Events []event.Event `json:"events"`
+}
+
 type segmentsPayload struct {
 	Provenance classify.Provenance `json:"provenance"`
 	Segments   []classify.Segment  `json:"segments"`

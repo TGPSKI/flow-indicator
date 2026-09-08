@@ -125,7 +125,7 @@ func FileFor(kind string) string {
 		return FileClassifications
 	case event.KindPointerResolved, event.KindEpochAdvanced,
 		event.KindRegimeChanged, event.KindTrendEmerged, event.KindMetricsComputed,
-		event.KindStateAtObservationStop:
+		event.KindStateAtObservationStop, event.KindSemanticProjectionUpdated:
 		return FileMetrics
 	}
 	switch {

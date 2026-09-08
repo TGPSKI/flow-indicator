@@ -240,13 +240,23 @@ func TestLiveElapsedIsAHeroLine(t *testing.T) {
 }
 
 func TestLiveShowsSemanticOperationalStatus(t *testing.T) {
-	v := sampleView(96)
-	v.Status.Semantic = &classify.Operational{Requested: 5, Completed: 3, Pending: 1, Failed: 1, TimedOut: 1, Dropped: 2, P95MS: 184}
+	v := sampleView(140)
+	v.Status.Semantic = &classify.Operational{Requested: 8, Completed: 3, Pending: 1, CatchUp: 2, Failed: 1, TimedOut: 1, Applied: 3, Changed: 1, LastError: "endpoint returned status 500", P95MS: 184}
+	v.Status.ModelDetails = true
 	out := Live(v)
-	for _, want := range []string{"SEMANTIC", "3/5 done", "q1", "fail1", "to1", "drop2", "p95=184ms"} {
+	for _, want := range []string{"MODEL", "1/3 changed", "MODEL JOBS", "3 answers", "1 active", "2 catching up", "MODEL FAIL", "1 errors", "1 timed out", "MODEL TIME", "95% completed within 184ms", "MODEL WHY", "status 500"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("semantic status misses %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestLiveHidesModelDetailsByDefault(t *testing.T) {
+	v := sampleView(96)
+	v.Status.Semantic = &classify.Operational{Applied: 7, Changed: 6, Failed: 2, CatchUp: 24}
+	out := Live(v)
+	if !strings.Contains(out, "6/7 changed") || strings.Contains(out, "MODEL JOBS") || strings.Contains(out, "2 errors") {
+		t.Fatalf("default model row is not compact:\n%s", out)
 	}
 }
 

@@ -78,6 +78,9 @@ type SemanticStats struct {
 	P50MS       *int64   `json:"p50_latency_ms,omitempty"`
 	P95MS       *int64   `json:"p95_latency_ms,omitempty"`
 	Classifiers []string `json:"classifiers,omitempty"`
+	LastStatus  string   `json:"last_status,omitempty"`
+	LastError   string   `json:"last_error,omitempty"`
+	LastSeq     uint64   `json:"last_source_seq,omitempty"`
 
 	latencies []int64
 	seen      map[string]struct{}
@@ -85,6 +88,7 @@ type SemanticStats struct {
 
 func (s *SemanticStats) add(c classify.Completion) {
 	s.Recorded++
+	s.LastStatus, s.LastError, s.LastSeq = c.Status, c.Error, c.Seq
 	if c.LatencyMS >= 0 {
 		s.latencies = append(s.latencies, c.LatencyMS)
 	}
@@ -134,18 +138,55 @@ func Load(dir string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	s, err := LoadEvents(events)
+	if err != nil {
+		return nil, err
+	}
+	s.Dir = dir
+	if raw, err := readSourceFile(dir); err == nil {
+		s.Source = raw
+		s.StreamID = raw.StreamID
+	}
+	return s, nil
+}
+
+// LoadEvents projects an event sequence without reading a session directory.
+// A semantic projection update replaces the prior derived view while its
+// completion records remain in the operational semantic statistics.
+func LoadEvents(events []event.Event) (*Session, error) {
+	base, err := loadEvents(events)
+	if err != nil {
+		return nil, err
+	}
+	var latest state.SemanticProjectionUpdate
+	for _, e := range events {
+		if e.Kind != event.KindSemanticProjectionUpdated {
+			continue
+		}
+		if err := json.Unmarshal(e.Payload, &latest); err != nil {
+			return nil, fmt.Errorf("render: decode semantic projection event %s: %w", e.ID, err)
+		}
+	}
+	if len(latest.Events) == 0 {
+		return base, nil
+	}
+	updated, err := loadEvents(latest.Events)
+	if err != nil {
+		return nil, err
+	}
+	updated.Semantic = base.Semantic
+	updated.events = events
+	return updated, nil
+}
+
+func loadEvents(events []event.Event) (*Session, error) {
 	s := &Session{
-		Dir:               dir,
 		Repairs:           make(map[string]*state.Repair),
 		Pollution:         make(map[string]pollutionRecord),
 		Obligations:       make(map[string]*state.Obligation),
 		PointerOutcome:    make(map[string]int),
 		PollutionByRepair: make(map[string][]string),
 		events:            events,
-	}
-	if raw, err := readSourceFile(dir); err == nil {
-		s.Source = raw
-		s.StreamID = raw.StreamID
 	}
 
 	for _, e := range events {
@@ -423,12 +464,19 @@ func (s *Session) Report() string {
 
 	if s.Semantic.Recorded > 0 {
 		b.WriteString("\n## semantic operations\n\n")
-		b.WriteString("These counters describe deferred classifier work. They do not alter interaction metrics or regimes.\n\n")
+		b.WriteString("These counters describe model work. In hybrid mode, completed answers may update the named semantic projection.\n\n")
 		fmt.Fprintf(&b, "| recorded | completed | failed | timed out | canceled | p50 | p95 |\n|---|---|---|---|---|---|---|\n| %d | %d | %d | %d | %d | %s | %s |\n",
 			s.Semantic.Recorded, s.Semantic.Completed, s.Semantic.Failed, s.Semantic.TimedOut, s.Semantic.Canceled,
 			semanticLatency(s.Semantic.P50MS), semanticLatency(s.Semantic.P95MS))
 		if len(s.Semantic.Classifiers) > 0 {
 			fmt.Fprintf(&b, "\nclassifier identities: %s\n", strings.Join(s.Semantic.Classifiers, ", "))
+		}
+		if s.Semantic.LastStatus != "" {
+			fmt.Fprintf(&b, "\nlatest outcome: source %d, %s", s.Semantic.LastSeq, s.Semantic.LastStatus)
+			if s.Semantic.LastError != "" {
+				fmt.Fprintf(&b, ": %s", s.Semantic.LastError)
+			}
+			b.WriteString("\n")
 		}
 	}
 

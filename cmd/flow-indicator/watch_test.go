@@ -11,8 +11,23 @@ import (
 
 	"github.com/TGPSKI/flow-indicator/internal/classify"
 	"github.com/TGPSKI/flow-indicator/internal/config"
+	"github.com/TGPSKI/flow-indicator/internal/render"
 	"github.com/TGPSKI/flow-indicator/internal/store"
 )
+
+type immediateSemantic struct{}
+
+func (immediateSemantic) Name() string                        { return "semantic-test" }
+func (immediateSemantic) Version() string                     { return "1" }
+func (immediateSemantic) Hash() string                        { return "semantic-test-hash" }
+func (immediateSemantic) Capabilities() classify.Capabilities { return nil }
+func (immediateSemantic) Classify(_ context.Context, in classify.Input) (classify.Result, error) {
+	n := len(in.Turn.Text)
+	return classify.Result{
+		Segments:   []classify.Segment{{Label: classify.LabelForwardWork, Start: 0, End: n, Chars: n}},
+		Provenance: classify.Provenance{Classifier: "semantic-test", Version: "1", Hash: "semantic-test-hash", SourceTurn: in.Turn.Seq},
+	}, nil
+}
 
 // Stopping a watcher means observation stopped. It does not mean the operator
 // walked away, the repair failed, or the session ended. The interaction may
@@ -97,6 +112,54 @@ func TestWatchShutdownConcludesNothing(t *testing.T) {
 	}
 	if inventory.Payload.PendingPointers == nil {
 		t.Error("the derived inventory does not report the references left unresolved")
+	}
+}
+
+func TestHybridCompletionUpdatesTheLiveProjection(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "live.jsonl")
+	const text = "Implement the parser."
+	if err := os.WriteFile(source, []byte(`{"speaker":"user","text":"`+text+`"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(writeDefaultConfig(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Classifier.Mode = config.ModeHybrid
+	hybrid, err := classify.NewHybridWithDeadline(immediateSemantic{}, 1, 2, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hybrid.Markers = classify.Heuristic{}
+
+	dataDir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- watchFile(ctx, cfg, dataDir, "generic", hybrid, source, "hybrid-live", "", 0, false, display{micro: true})
+	}()
+	// The heartbeat drains and flushes a completed worker result without
+	// requiring a new source record.
+	time.Sleep(1200 * time.Millisecond)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("watch: %v", err)
+	}
+
+	dir := store.SessionDir(dataDir, "hybrid-live")
+	raw, err := os.ReadFile(filepath.Join(dir, store.FileMetrics))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "semantic_projection_updated") {
+		t.Fatal("hybrid completion did not append a projection update")
+	}
+	loaded, err := render.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := loaded.Final().ForwardChars; got != len(text) {
+		t.Fatalf("semantic projection forward chars = %d, want %d", got, len(text))
 	}
 }
 

@@ -30,8 +30,8 @@ An overlay named with `--profile` that does not exist is an error. The default
 one not existing is not.
 
 Every tier reads the same ruleset: the marker classifier is the whole of
-`heuristic` mode and the fast half of `openai-compatible` and `hybrid`, so an
-overlay reaches all three. `cmd/flow-indicator/profile_test.go` holds it down by
+`heuristic` mode and the fast half of `openai-compatible`, `hybrid` and `deferred`, so an
+overlay reaches all four modes. `cmd/flow-indicator/profile_test.go` holds it down by
 replaying `fixtures/recent-thrash` with and without an overlay and asserting the
 two rule hashes differ. Any run prints the hash in force — `calibrate` on its
 `rules` line, and every stored classified event carries it — so read it there

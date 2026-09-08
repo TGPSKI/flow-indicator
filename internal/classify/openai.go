@@ -91,11 +91,12 @@ func worthSending(in Input) bool {
 // heuristic classifier; the model supplies the semantic fields. Provenance
 // records both.
 type OpenAI struct {
-	Endpoint string
-	Model    string
-	APIKey   string
-	Client   *http.Client
-	Markers  Heuristic
+	Endpoint        string
+	Model           string
+	APIKey          string
+	Client          *http.Client
+	Markers         Heuristic
+	DisableThinking bool
 }
 
 // NewOpenAI returns a classifier for endpoint and model.
@@ -129,7 +130,7 @@ func (o *OpenAI) Hash() string {
 	// Model names are not artifact identities: two local runtimes can expose
 	// the same name with different weights or templates. The endpoint is part
 	// of the classifier identity so those outputs are never silently merged.
-	h := sha256.Sum256([]byte(PromptVersion + "\x00" + o.Endpoint + "\x00" + o.Model + "\x00" + Prompt))
+	h := sha256.Sum256([]byte(PromptVersion + "\x00" + o.Endpoint + "\x00" + o.Model + "\x00" + fmt.Sprintf("disable_thinking=%t", o.DisableThinking) + "\x00" + Prompt))
 	return hex.EncodeToString(h[:])[:16]
 }
 
@@ -423,9 +424,10 @@ func tile(out modelOutput, text string) []Segment {
 }
 
 type chatRequest struct {
-	Model       string        `json:"model"`
-	Temperature float64       `json:"temperature"`
-	Messages    []chatMessage `json:"messages"`
+	Model              string          `json:"model"`
+	Temperature        float64         `json:"temperature"`
+	Messages           []chatMessage   `json:"messages"`
+	ChatTemplateKwargs map[string]bool `json:"chat_template_kwargs,omitempty"`
 }
 
 type chatMessage struct {
@@ -456,14 +458,18 @@ func (o *OpenAI) request(ctx context.Context, in Input) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("openai: marshal turn context: %w", err)
 	}
-	body, err := json.Marshal(chatRequest{
+	request := chatRequest{
 		Model:       o.Model,
 		Temperature: 0,
 		Messages: []chatMessage{
 			{Role: "system", Content: Prompt},
 			{Role: "user", Content: string(turnContext)},
 		},
-	})
+	}
+	if o.DisableThinking {
+		request.ChatTemplateKwargs = map[string]bool{"enable_thinking": false}
+	}
+	body, err := json.Marshal(request)
 	if err != nil {
 		return nil, fmt.Errorf("openai: marshal request: %w", err)
 	}

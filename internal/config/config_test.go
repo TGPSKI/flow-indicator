@@ -89,6 +89,16 @@ func TestHybridModeRequiresEndpointAndModel(t *testing.T) {
 	}
 }
 
+func TestDeferredModeRequiresEndpointAndModel(t *testing.T) {
+	_, err := Load(write(t, `{"classifier": {"mode": "deferred"}}`))
+	if err == nil {
+		t.Fatal("deferred mode accepted without an endpoint")
+	}
+	if _, err := Load(write(t, `{"classifier": {"mode": "deferred", "endpoint": "http://127.0.0.1:8000/v1/chat/completions", "model": "local"}}`)); err != nil {
+		t.Fatalf("valid deferred configuration rejected: %v", err)
+	}
+}
+
 func TestUnknownClassifierModeIsAnError(t *testing.T) {
 	_, err := Load(write(t, `{"classifier": {"mode": "magic"}}`))
 	if err == nil || !strings.Contains(err.Error(), "classifier.mode") {

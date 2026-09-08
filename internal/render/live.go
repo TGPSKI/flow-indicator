@@ -141,7 +141,8 @@ type Status struct {
 	Stopped bool
 	// Semantic describes the bounded local-model lane when one is configured.
 	// It is operational evidence about this instrument, not a domain metric.
-	Semantic *classify.Operational
+	Semantic     *classify.Operational
+	ModelDetails bool
 }
 
 // LiveView is what the one-screen renderer draws. It is a value: the renderer
@@ -321,7 +322,19 @@ func Live(v LiveView) string {
 	add(heroRow("TREND", trendNote(v), v))
 	add(heroRow("EVENTS", eventNote(v), v))
 	if v.Status.Semantic != nil {
-		add(heroRow("SEMANTIC", semanticStatus(v.Status.Semantic), v))
+		add(heroRow("MODEL", semanticUse(v.Status.Semantic), v))
+		if v.Status.ModelDetails {
+			add(heroRow("MODEL JOBS", semanticStatus(v.Status.Semantic), v))
+			if failures := semanticFailures(v.Status.Semantic); failures != "" {
+				add(heroRow("MODEL FAIL", failures, v))
+			}
+			if timing := semanticTiming(v.Status.Semantic); timing != "" {
+				add(heroRow("MODEL TIME", timing, v))
+			}
+			if v.Status.Semantic.LastError != "" {
+				add(heroRow("MODEL WHY", v.Status.Semantic.LastError, v))
+			}
+		}
 	}
 	add("")
 
@@ -477,29 +490,49 @@ func semanticStatus(s *classify.Operational) string {
 	if s == nil {
 		return ""
 	}
-	coverage := "waiting"
+	coverage := "no requests"
 	if s.Requested > 0 {
-		coverage = fmt.Sprintf("%d/%d done", s.Completed, s.Requested)
+		coverage = fmt.Sprintf("%d answers", s.Completed)
 	}
 	parts := []string{coverage}
 	if s.Pending > 0 {
-		parts = append(parts, fmt.Sprintf("q%d", s.Pending))
+		parts = append(parts, fmt.Sprintf("%d active", s.Pending))
 	}
-	if s.Failed > 0 {
-		parts = append(parts, fmt.Sprintf("fail%d", s.Failed))
-	}
-	if s.TimedOut > 0 {
-		parts = append(parts, fmt.Sprintf("to%d", s.TimedOut))
-	}
-	if s.Dropped > 0 {
-		parts = append(parts, fmt.Sprintf("drop%d", s.Dropped))
-	}
-	if s.P95MS > 0 {
-		parts = append(parts, fmt.Sprintf("p95=%dms", s.P95MS))
-	} else if s.LastMS > 0 {
-		parts = append(parts, fmt.Sprintf("last %dms", s.LastMS))
+	if s.CatchUp > 0 {
+		parts = append(parts, fmt.Sprintf("%d catching up", s.CatchUp))
 	}
 	return strings.Join(parts, " · ")
+}
+
+func semanticFailures(s *classify.Operational) string {
+	var parts []string
+	if s.Failed > 0 {
+		parts = append(parts, fmt.Sprintf("%d errors", s.Failed))
+	}
+	if s.TimedOut > 0 {
+		parts = append(parts, fmt.Sprintf("%d timed out", s.TimedOut))
+	}
+	if s.Dropped > 0 {
+		parts = append(parts, fmt.Sprintf("%d lost", s.Dropped))
+	}
+	return strings.Join(parts, " · ")
+}
+
+func semanticUse(s *classify.Operational) string {
+	if s.Applied == 0 {
+		return "0/0 changed"
+	}
+	return fmt.Sprintf("%d/%d changed", s.Changed, s.Applied)
+}
+
+func semanticTiming(s *classify.Operational) string {
+	if s.P95MS > 0 {
+		return fmt.Sprintf("95%% completed within %dms", s.P95MS)
+	}
+	if s.LastMS > 0 {
+		return fmt.Sprintf("last request took %dms", s.LastMS)
+	}
+	return ""
 }
 
 // orGlyph substitutes the unknown glyph for an empty value, so a row that has

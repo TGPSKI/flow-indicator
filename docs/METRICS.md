@@ -475,10 +475,11 @@ value is an error, never a silent fallback.
 | `thresholds.serialization_warn` | 3.0 | SI threshold in the third thrash rule and the third drift rule |
 | `thresholds.serialization_high` | 6.0 | Display only: the live view marks SI `warn` at `serialization_warn` and `high` here. No regime rule consumes it |
 | `thresholds.repeated_obligations_warn` | 2 | Repeated unresolved obligation candidates in the third thrash rule |
-| `classifier.mode` | `heuristic` | `none`, `heuristic`, `openai-compatible` or `hybrid` |
-| `classifier.endpoint`, `classifier.model` | empty | Required when the mode is `openai-compatible` or `hybrid` |
-| `classifier.live_deadline_ms` | 200 | Per-job deadline for the bounded hybrid worker; never a source-ingest deadline |
-| `classifier.workers`, `classifier.max_queue` | 1, 32 | Bounded local-model concurrency and backlog in hybrid mode |
+| `classifier.mode` | `heuristic` | `none`, `heuristic`, `openai-compatible`, `hybrid` or `deferred` |
+| `classifier.endpoint`, `classifier.model` | empty | Required when the mode is `openai-compatible`, `hybrid` or `deferred` |
+| `classifier.live_deadline_ms` | 200 | Per-job deadline for the bounded hybrid or deferred worker; never a source-ingest deadline |
+| `classifier.workers`, `classifier.max_queue` | 1, 32 | Bounded local-model concurrency and backlog in hybrid and deferred modes |
+| `classifier.disable_thinking` | false | vLLM request option that asks a reasoning model to return `message.content` directly |
 | `privacy.store_text` | false | Store full record text in events |
 | `privacy.store_snippets` | true | Store a bounded excerpt |
 | `privacy.snippet_chars` | 160 | Excerpt size |
@@ -515,6 +516,16 @@ direction. Three rules bound what is reported:
   evidence is not a recovery.
 
 ## Judgement calls
+
+17. **Late semantic evidence can update a named projection.** The original
+   marker projection and each semantic completion remain append-only facts.
+   In `hybrid` mode, a completed result appends a source-ordered
+   `semantic_projection_updated` event built from the completions received so
+   far; the renderer selects its contained projection. This resolves the prior
+   contract wording that late results were evidence but never a revision:
+   evidence still is not rewritten, while the disposable projection now names
+   exactly which evidence changed it. `deferred` retains the former
+   non-updating behavior for observers who want the marker reading held fixed.
 
 Where a rule could be read two ways, this is what was decided and why. Each
 entry states the reading that was rejected, so a change to one of them is a

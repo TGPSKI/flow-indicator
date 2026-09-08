@@ -106,7 +106,7 @@ creating one merely to inspect it.
 | Operator selects a profile update and an overlay exists | Edit that overlay, preserving its required name; validate it with a local replay or watch using the selected configuration. |
 | Operator selects a profile update and no overlay exists | Create profile.json beside the selected configuration using the shape and merge rules in docs/PROFILES.md; validate it with a local replay or watch using the selected configuration. |
 | Classifier mode is none or heuristic | Do not set an endpoint or API key; continue to Step 4. |
-| Operator selects openai-compatible or hybrid | Present the endpoint, model, mode, privacy, destination, and request contents from docs/INFERENCE.md; wait for explicit endpoint selection before configuration changes. |
+| Operator selects openai-compatible, hybrid or deferred | Present the endpoint, model, mode, privacy, destination, and request contents from docs/INFERENCE.md; wait for explicit endpoint selection before configuration changes. |
 | Operator selects a local semantic endpoint | Record the selected endpoint and model; configure them after the operator confirms the privacy choice. |
 | Operator selects a cloud semantic endpoint | Record that eligible turn text, up to four prior operator turns, unresolved obligation candidates, and an open repair reference leave the machine; configure it after the operator confirms that destination. |
 | Operator declines endpoint use | Retain none or heuristic; do not test an endpoint or send transcript text. |
@@ -144,7 +144,8 @@ or heuristic does not send transcript text.
 | Operator selected an active session with default configuration and baseline profile | Run flow-indicator watch <handle> or flow-indicator watch --current. Stop observation with Ctrl-C when the operator chooses; this records observation stopped without changing the session. |
 | Operator selected an active session with named configuration or profile overlay | Run the selected watch command with --config /selected/path/config.json and --profile /selected/path/profile.json. Stop observation with Ctrl-C when the operator chooses; this records observation stopped without changing the session. |
 | Operator selected openai-compatible | Use it for the selected finished-session replay after explicit endpoint selection. |
-| Operator selected hybrid | Use it after explicit endpoint selection; semantic results are recorded separately from the responsive watch. |
+| Operator selected hybrid | Use it after explicit endpoint selection; completed semantic results update a named source-ordered projection. |
+| Operator selected deferred | Use it after explicit endpoint selection; semantic results are retained without changing the live marker projection. |
 
 **Decide**:
 

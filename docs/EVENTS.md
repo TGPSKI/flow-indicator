@@ -85,7 +85,8 @@ transitions, so a prefix rule would file a candidate as a state change.
 | `near_repeat_candidate` | classified | `nearRepeatPayload` | `classifications.jsonl` | Token Jaccard ≥ 0.80 against an unresolved obligation candidate that the content-token key did not already match as a repeat |
 | `repair_expansion_candidate` | classified | `expansionPayload` | `classifications.jsonl` | An agent turn carried expansion markers or a repair claim |
 | `classifier_failed` | classified | `failurePayload` | `classifications.jsonl` | The classifier returned an error. A safe fallback result returned with the error is retained; otherwise the turn contributes no classified evidence |
-| `semantic_classification_completed` | classified | `classify.Completion` | `classifications.jsonl` | A bounded local-model worker finished, failed, timed out or was canceled for one source record. It carries job identity, input hash, classifier provenance, latency and any validated result. It is deferred evidence: the live projector does not apply it |
+| `semantic_classification_completed` | classified | `classify.Completion` | `classifications.jsonl` | A bounded local-model worker attempt finished, failed, timed out or was canceled for one source record. It carries job identity, attempt, input hash, classifier provenance, latency and any validated result |
+| `semantic_projection_updated` | derived | `state.SemanticProjectionUpdate` | `metrics.jsonl` | The complete source-ordered projection selected by completed semantic results received so far; used by `hybrid`, while `deferred` retains completions without this update |
 | `obligation_introduced` | derived | `obligationPayload` | `obligations.jsonl` | A normalized obligation key was seen for the first time in this epoch. The candidate enters the unresolved inventory; nothing here establishes that the requirement is in force |
 | `obligation_repeated` | derived | `obligationRepeatPayload` | `obligations.jsonl` | The requirement was stated again, matched on the normalized sentence or on the content-token key; `during_correction` says whether the turn was also a correction |
 | `obligation_violated` | derived | `obligationPayload` | `obligations.jsonl` | A correction's identified target key is this obligation's key. A repeat inside an unrelated correction is not enough |
@@ -143,13 +144,17 @@ At a real source end, `Projector.Finish` emits the outstanding `repair_status`,
 `semantic_classification_completed` is outside the per-record pipeline because
 the local worker finishes after the source reader has continued. Its identity
 includes the classifier and immutable input hash, so two semantic attempts for
-one source sequence remain separate append-only facts. Strict replay can select
-one; the live projector never mutates past state from its arrival.
+one source sequence remain separate append-only facts. In `hybrid` mode, each
+completed result appends `semantic_projection_updated`, which carries a fresh
+source-ordered projection selected from the results received so far. In
+`deferred` mode, strict replay can select a completion later and the live
+projection remains on markers.
 
 `summary.json` and `report.md` project retained semantic completions into a
 separate operational section. Their completion counts and latency percentiles
-are not domain metrics and cannot change a regime, repair, obligation or
-pointer outcome.
+are not domain metrics. In `hybrid`, the completed result may also be selected
+by a separate, source-ordered semantic projection update; the operational
+counts themselves cannot change a regime, repair, obligation or pointer outcome.
 
 Strict replay can select a completion only when its `stream_id`, `source_seq`,
 classifier identity and `input_hash` exactly match the reconstructed classifier

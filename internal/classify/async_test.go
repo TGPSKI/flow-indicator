@@ -78,13 +78,12 @@ func TestWorkerCompletesWithoutBlockingSubmit(t *testing.T) {
 	}
 }
 
-func TestWorkerDropsInsteadOfBlockingWhenQueueIsFull(t *testing.T) {
+func TestWorkerCatchesUpWithoutBlockingWhenQueueIsFull(t *testing.T) {
 	gate := make(chan struct{})
 	w, err := NewWorker(queuedClassifier{gate: gate}, 1, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer w.Close()
 	if _, err := w.Submit("stream", 0, semanticInput(1)); err != nil {
 		t.Fatal(err)
 	}
@@ -93,13 +92,29 @@ func TestWorkerDropsInsteadOfBlockingWhenQueueIsFull(t *testing.T) {
 	if _, err := w.Submit("stream", 0, semanticInput(2)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.Submit("stream", 0, semanticInput(3)); !errors.Is(err, ErrSemanticQueueFull) {
-		t.Fatalf("queue error = %v, want ErrSemanticQueueFull", err)
+	if _, err := w.Submit("stream", 0, semanticInput(3)); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.Snapshot().CatchUp; got != 1 {
+		t.Fatalf("catch-up = %d, want 1", got)
+	}
+	if _, err := w.Submit("stream", 0, semanticInput(4)); !errors.Is(err, ErrSemanticQueueFull) {
+		t.Fatalf("overflow error = %v, want ErrSemanticQueueFull", err)
 	}
 	if got := w.Snapshot().Dropped; got != 1 {
-		t.Fatalf("dropped = %d, want 1", got)
+		t.Fatalf("dropped = %d, want one job beyond both bounded queues", got)
 	}
 	close(gate)
+	for range 3 {
+		select {
+		case <-w.Results():
+		case <-time.After(time.Second):
+			t.Fatal("catch-up job did not complete")
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestHybridReturnsHeuristicImmediatelyAndDefersSemanticEvidence(t *testing.T) {
@@ -186,6 +201,39 @@ func TestWorkerRecordsDeadlineSeparatelyFromFailure(t *testing.T) {
 	stats := w.Snapshot()
 	if stats.TimedOut != 1 || stats.Failed != 0 {
 		t.Fatalf("stats = %+v, want one timeout and no failure", stats)
+	}
+}
+
+func TestWorkerRetriesOneTimeoutThroughCatchUp(t *testing.T) {
+	gate := make(chan struct{})
+	w, err := NewWorkerWithDeadline(queuedClassifier{gate: gate}, 1, 1, 5*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	first, err := w.Submit("stream", 0, semanticInput(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var got []Completion
+	for range 2 {
+		select {
+		case completion := <-w.Results():
+			got = append(got, completion)
+		case <-time.After(time.Second):
+			t.Fatal("worker did not finish both timeout attempts")
+		}
+	}
+	if got[0].JobID != first.ID || got[0].Attempt != 0 {
+		t.Fatalf("first attempt = %+v", got[0])
+	}
+	if got[1].JobID == first.ID || got[1].Attempt != 1 {
+		t.Fatalf("retry attempt = %+v", got[1])
+	}
+	stats := w.Snapshot()
+	if stats.Requested != 2 || stats.TimedOut != 2 || stats.Pending != 0 || stats.CatchUp != 0 || stats.Dropped != 0 {
+		t.Fatalf("stats after retry = %+v", stats)
 	}
 }
 

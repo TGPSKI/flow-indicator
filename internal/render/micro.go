@@ -128,7 +128,7 @@ func Micro(v MicroView) string {
 	row("TREND", orGlyph(trendNote(LiveView{Trend: v.Trend, Color: v.Color})), "")
 	row("EVENTS", orGlyph(eventNote(LiveView{Event: v.Event, Color: v.Color})), "")
 	if v.Status.Semantic != nil {
-		row("SEMANTIC", semanticStatus(v.Status.Semantic), "")
+		row("MODEL", semanticUse(v.Status.Semantic), "")
 	}
 	blank()
 

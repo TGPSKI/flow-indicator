@@ -14,9 +14,8 @@ import (
 	"github.com/TGPSKI/flow-indicator/internal/stream"
 )
 
-// ErrSemanticQueueFull says the live semantic lane declined a job rather than
-// delaying transcript ingestion. A declined semantic reading is visible in the
-// operational counters and never changes the fast projection.
+// ErrSemanticQueueFull says both bounded semantic queues were full. The source
+// reader continues, and the lost reading remains visible in the counters.
 var ErrSemanticQueueFull = errors.New("semantic classifier queue is full")
 
 // Job is one immutable request for deferred semantic classification. Input is
@@ -32,6 +31,7 @@ type Job struct {
 	Classifier        string
 	ClassifierVersion string
 	ClassifierHash    string
+	Attempt           int
 	input             Input
 }
 
@@ -52,6 +52,7 @@ type Completion struct {
 	Result            *Result          `json:"result,omitempty"`
 	Error             string           `json:"error,omitempty"`
 	LatencyMS         int64            `json:"latency_ms"`
+	Attempt           int              `json:"attempt,omitempty"`
 }
 
 const (
@@ -64,21 +65,25 @@ const (
 // Operational is a point-in-time view of the semantic lane. It describes the
 // measurement apparatus and must never enter a regime comparison.
 type Operational struct {
-	Requested int   `json:"requested"`
-	Completed int   `json:"completed"`
-	Failed    int   `json:"failed"`
-	TimedOut  int   `json:"timed_out"`
-	Canceled  int   `json:"canceled"`
-	Dropped   int   `json:"dropped"`
-	Pending   int   `json:"pending"`
-	LastMS    int64 `json:"last_latency_ms,omitempty"`
-	P50MS     int64 `json:"p50_latency_ms,omitempty"`
-	P95MS     int64 `json:"p95_latency_ms,omitempty"`
+	Requested  int    `json:"requested"`
+	Completed  int    `json:"completed"`
+	Failed     int    `json:"failed"`
+	TimedOut   int    `json:"timed_out"`
+	Canceled   int    `json:"canceled"`
+	Dropped    int    `json:"dropped"`
+	Pending    int    `json:"pending"`
+	LastMS     int64  `json:"last_latency_ms,omitempty"`
+	P50MS      int64  `json:"p50_latency_ms,omitempty"`
+	P95MS      int64  `json:"p95_latency_ms,omitempty"`
+	CatchUp    int    `json:"catch_up"`
+	Applied    int    `json:"applied"`
+	Changed    int    `json:"changed"`
+	LastStatus string `json:"last_status,omitempty"`
+	LastError  string `json:"last_error,omitempty"`
 }
 
-// Worker performs semantic classification away from the source reader. It is
-// bounded by workers and queue capacity; it cannot create an unbounded backlog
-// of transcript text while a local model is slow.
+// Worker performs semantic classification away from the source reader. Its
+// active and catch-up queues each have the configured queue capacity.
 type Worker struct {
 	classifier Classifier
 	deadline   time.Duration
@@ -92,6 +97,7 @@ type Worker struct {
 	closed  bool
 	stats   Operational
 	latency []int64
+	catchUp []Job
 }
 
 // NewWorker starts a bounded semantic worker pool.
@@ -136,8 +142,8 @@ func NewWorkerWithDeadline(classifier Classifier, workers, queue int, deadline t
 }
 
 // Submit copies input before it crosses the worker boundary. It never blocks:
-// a full queue is an operational fact, not a reason to stop observing a live
-// source.
+// active overflow enters the bounded catch-up lane, and only overflow beyond
+// both bounds is lost.
 func (w *Worker) Submit(streamID string, epoch uint64, in Input) (Job, error) {
 	job := newJob(streamID, epoch, in, w.classifier)
 	w.mu.Lock()
@@ -151,8 +157,14 @@ func (w *Worker) Submit(streamID string, epoch uint64, in Input) (Job, error) {
 		w.stats.Pending++
 		return job, nil
 	default:
-		w.stats.Dropped++
-		return Job{}, ErrSemanticQueueFull
+		if len(w.catchUp) >= cap(w.jobs) {
+			w.stats.Dropped++
+			return Job{}, ErrSemanticQueueFull
+		}
+		w.catchUp = append(w.catchUp, job)
+		w.stats.Requested++
+		w.stats.CatchUp++
+		return job, nil
 	}
 }
 
@@ -189,9 +201,11 @@ func (w *Worker) Close() error {
 	w.mu.Lock()
 	// Jobs still buffered when shutdown begins never reached a classifier. They
 	// are cancellations, not pending work after the watcher has ended.
-	if w.stats.Pending > 0 {
-		w.stats.Canceled += w.stats.Pending
+	if w.stats.Pending > 0 || w.stats.CatchUp > 0 {
+		w.stats.Canceled += w.stats.Pending + w.stats.CatchUp
 		w.stats.Pending = 0
+		w.stats.CatchUp = 0
+		w.catchUp = nil
 	}
 	w.mu.Unlock()
 	return nil
@@ -212,7 +226,7 @@ func (w *Worker) run() {
 				JobID: job.ID, StreamID: job.StreamID, Seq: job.Seq, Epoch: job.Epoch,
 				Source: job.Source, InputHash: job.InputHash,
 				Classifier: job.Classifier, ClassifierVersion: job.ClassifierVersion, ClassifierHash: job.ClassifierHash,
-				LatencyMS: time.Since(started).Milliseconds(),
+				LatencyMS: time.Since(started).Milliseconds(), Attempt: job.Attempt,
 			}
 			switch {
 			case err == nil:
@@ -225,6 +239,10 @@ func (w *Worker) run() {
 				completion.Status, completion.Error = CompletionFailed, err.Error()
 			}
 			w.record(completion)
+			if completion.Status == CompletionTimedOut && job.Attempt == 0 {
+				w.retry(job)
+			}
+			w.promoteCatchUp()
 			select {
 			case w.results <- completion:
 			case <-w.ctx.Done():
@@ -248,6 +266,8 @@ func (w *Worker) record(c Completion) {
 		w.stats.Pending--
 	}
 	w.stats.LastMS = c.LatencyMS
+	w.stats.LastStatus = c.Status
+	w.stats.LastError = c.Error
 	w.latency = append(w.latency, c.LatencyMS)
 	if len(w.latency) > 256 {
 		copy(w.latency, w.latency[len(w.latency)-256:])
@@ -263,6 +283,41 @@ func (w *Worker) record(c Completion) {
 	default:
 		w.stats.Failed++
 	}
+}
+
+func (w *Worker) retry(job Job) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	job.Attempt++
+	job.ID = retryJobID(job)
+	if len(w.catchUp) >= cap(w.jobs) {
+		w.stats.Dropped++
+		return
+	}
+	w.catchUp = append(w.catchUp, job)
+	w.stats.Requested++
+	w.stats.CatchUp++
+}
+
+func (w *Worker) promoteCatchUp() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(w.catchUp) == 0 || w.closed {
+		return
+	}
+	select {
+	case w.jobs <- w.catchUp[0]:
+		w.catchUp = w.catchUp[1:]
+		w.stats.CatchUp--
+		w.stats.Pending++
+	default:
+	}
+}
+
+func retryJobID(job Job) string {
+	seed := job.ID + "\x00" + fmt.Sprintf("%d", job.Attempt)
+	sum := sha256.Sum256([]byte(seed))
+	return hex.EncodeToString(sum[:])[:24]
 }
 
 func percentile(sorted []int64, p int) int64 {
@@ -397,3 +452,17 @@ func (h *Hybrid) SetEpoch(epoch uint64) {
 func (h *Hybrid) Results() <-chan Completion { return h.Worker.Results() }
 func (h *Hybrid) Operational() Operational   { return h.Worker.Snapshot() }
 func (h *Hybrid) Close() error               { return h.Worker.Close() }
+
+// Semantic reports the immutable classifier behind the worker. Callers may
+// use its declared capabilities when projecting a retained completion; they
+// must never call it from the source reader.
+func (h *Hybrid) Semantic() Classifier { return h.Worker.classifier }
+
+// RecordProjection reports that completed semantic evidence was selected by a
+// live projection, and whether that selection changed the visible snapshot.
+func (h *Hybrid) RecordProjection(applied, changed int) {
+	h.Worker.mu.Lock()
+	defer h.Worker.mu.Unlock()
+	h.Worker.stats.Applied += applied
+	h.Worker.stats.Changed += changed
+}

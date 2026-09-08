@@ -185,10 +185,12 @@ Session, instance and corpus files are created 0600 under 0700 directories.
 
 ## Classifier endpoint
 
-`openai-compatible` and `hybrid` post turn text to whatever chat-completions
+`openai-compatible`, `hybrid` and `deferred` post turn text to whatever chat-completions
 endpoint is configured, with the key from `FLOW_INDICATOR_API_KEY` as a bearer
 token. `none` and `heuristic` send nothing, and `heuristic` is the default.
 Request boundary, provenance and replay semantics: [INFERENCE.md](INFERENCE.md).
+When `classifier.disable_thinking` is true, the request adds
+`chat_template_kwargs.enable_thinking=false`, an extension accepted by vLLM.
 
 ## Environment
 

@@ -17,7 +17,7 @@ func TestSemanticOperationsAreReportedApartFromMetrics(t *testing.T) {
 	for _, completion := range []classify.Completion{
 		{JobID: "done", StreamID: "semantic-report", Seq: 1, Classifier: "local", ClassifierVersion: "1", ClassifierHash: "aaa", Status: classify.CompletionCompleted, LatencyMS: 10},
 		{JobID: "timeout", StreamID: "semantic-report", Seq: 2, Classifier: "local", ClassifierVersion: "1", ClassifierHash: "aaa", Status: classify.CompletionTimedOut, LatencyMS: 30},
-		{JobID: "failure", StreamID: "semantic-report", Seq: 3, Classifier: "local", ClassifierVersion: "2", ClassifierHash: "bbb", Status: classify.CompletionFailed, LatencyMS: 20},
+		{JobID: "failure", StreamID: "semantic-report", Seq: 3, Classifier: "local", ClassifierVersion: "2", ClassifierHash: "bbb", Status: classify.CompletionFailed, Error: "endpoint returned status 500", LatencyMS: 20},
 	} {
 		if err := session.Append(event.NewWithIdentity("semantic-report", completion.Seq, 0, completion.Source,
 			event.KindSemanticCompleted, event.ClassClassified, completion.JobID, completion)); err != nil {
@@ -46,7 +46,7 @@ func TestSemanticOperationsAreReportedApartFromMetrics(t *testing.T) {
 		t.Fatalf("summary semantic operations = %+v", summary.Semantic)
 	}
 	report := loaded.Report()
-	for _, want := range []string{"## semantic operations", "| 3 | 1 | 1 | 1 | 0 | 20 ms | 30 ms |", "local/1/aaa", "local/2/bbb"} {
+	for _, want := range []string{"## semantic operations", "| 3 | 1 | 1 | 1 | 0 | 20 ms | 30 ms |", "local/1/aaa", "local/2/bbb", "latest outcome: source 3, failed: endpoint returned status 500"} {
 		if !strings.Contains(report, want) {
 			t.Errorf("report misses %q:\n%s", want, report)
 		}
