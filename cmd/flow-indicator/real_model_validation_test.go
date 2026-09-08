@@ -82,6 +82,12 @@ func TestRealSchemaOrder(t *testing.T) {
 		for _, text := range []string{"No, revert the changes to parser.go.", "Use @docs/PLAN.md for the next step.", "Implement the parser."} {
 			r, err := cls.Classify(context.Background(), classify.Input{Turn: stream.Record{Seq: 1, SpeakerClass: stream.SpeakerHuman, Text: text}})
 			t.Logf("ordered=%t text=%q correction=%t pointer=%t error=%v", ordered, text, r.Correction.IsCorrection, r.Pointer.IsPointer, err)
+			if err != nil {
+				t.Errorf("contract probe failed: %v", err)
+			}
+			if r.Correction.IsCorrection != (text == "No, revert the changes to parser.go.") || r.Pointer.IsPointer != (text == "Use @docs/PLAN.md for the next step.") {
+				t.Errorf("contract probe decisions differ: correction=%t pointer=%t", r.Correction.IsCorrection, r.Pointer.IsPointer)
+			}
 		}
 	}
 }
@@ -95,7 +101,7 @@ func TestRealHybridWatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg.Classifier.Mode, cfg.Classifier.ConstrainedJSON = config.ModeHybrid, true
+	cfg.Classifier.Mode = config.ModeHybrid
 	common := commonFlags{configPath: configPath}
 	rules, err := common.rules()
 	if err != nil {

@@ -103,6 +103,12 @@ the live test loads the profile beside the named configuration file.
 `TestRealSchemaOrder` requires only the model configuration and sends six
 synthetic probes with two schema property orders. Its logs and the replay
 validation counts are diagnostic measurements, not labeled accuracy gates.
+The synthetic probes assert their correction and pointer contract decisions.
+`TestRealCapturedContract` also reads `FLOW_INDICATOR_TEST_FAILURE_COPY`, a
+copied event directory. It reconstructs the first failed live request from a
+source copy, requires its recorded input hash to match, and tests that input
+three times against the configured endpoint. Production commands do not read
+these test variables.
 
 Each running `watch` on a discovered session — a file, or opencode's store —
 writes one operational record beside the

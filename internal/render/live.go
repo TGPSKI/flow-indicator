@@ -25,7 +25,7 @@ func can(s metrics.Snapshot, c classify.Capability) bool {
 // Width bounds for the one-screen view, in total columns including the box
 // rule. The view follows the terminal between them: narrower than the minimum
 // and the metric rows stop being readable, wider than the maximum and the
-// provenance column ends up an eye-movement away from the value it marks.
+// detail columns end up an eye-movement away from their primary values.
 const (
 	liveWidthMin = 46
 	liveWidthMax = 96
@@ -258,13 +258,6 @@ func inflationMark(v metrics.Value, t config.Thresholds) string {
 	}
 }
 
-// columnHeads name the cell columns. The provenance column is headed too: its
-// letters are the least self-explaining thing on screen, and the footnote that
-// used to carry that job is gone.
-var columnHeads = []string{"value", "detail", "detail"}
-
-const provHead = "class"
-
 // splitValue formats a measurement into its figure and its unit, so the
 // figures can be aligned without the units ragging them. The report's own
 // helpers spell an unknown out in words, which is right for a document and
@@ -290,8 +283,7 @@ func splitPercent(v metrics.Value) (numeric, unit string) {
 	return fmt.Sprintf("%.0f", v.Num*100), "%"
 }
 
-// Live renders the one-screen view. Provenance markers close each row: O
-// observed, C classified, D derived.
+// Live renders the one-screen view. Reports and events retain provenance.
 func Live(v LiveView) string {
 	table := metricTable(v.Snapshot, v.Thresholds)
 	inner := liveBox.Inner(v.Width, table.Natural())
@@ -322,11 +314,20 @@ func Live(v LiveView) string {
 	add(heroRow("TREND", trendNote(v), v))
 	add(heroRow("EVENTS", eventNote(v), v))
 	if v.Status.Semantic != nil {
-		add(heroRow("MODEL", semanticUse(v.Status.Semantic), v))
-		if failures := semanticFailures(v.Status.Semantic); failures != "" {
-			add(heroRow("MODEL FAIL", failures, v))
+		s := v.Status.Semantic
+		model := fmt.Sprintf("%d/%d validated", s.Completed, s.Eligible)
+		if n := s.Failed + s.TimedOut; n > 0 {
+			model += fmt.Sprintf(" · %d failed", n)
 		}
+		if s.Dropped > 0 {
+			model += fmt.Sprintf(" · %d dropped", s.Dropped)
+		}
+		add(heroRow("MODEL", model, v))
 		if v.Status.ModelDetails {
+			add(heroRow("MODEL USE", semanticUse(s), v))
+			if failures := semanticFailures(s); failures != "" {
+				add(heroRow("MODEL FAIL", failures, v))
+			}
 			add(heroRow("MODEL JOBS", semanticStatus(v.Status.Semantic), v))
 			if timing := semanticTiming(v.Status.Semantic); timing != "" {
 				add(heroRow("MODEL TIME", timing, v))
@@ -336,10 +337,23 @@ func Live(v LiveView) string {
 			}
 		}
 	}
+	if v.Status.ModelDetails && v.Snapshot.RepairID != "" {
+		status := "latest " + orGlyph(v.Snapshot.RepairStatus)
+		if v.Snapshot.RepairStatus == "open" {
+			status = "active open"
+		}
+		add(heroRow("REPAIR", status, v))
+	}
 	add("")
 
 	lines = append(lines, table.Draw(inner, panel.Options{Color: v.Color, Style: v.style})...)
 	return liveBox.Render(inner, lines)
+}
+
+func metricTable(s metrics.Snapshot, t config.Thresholds) panel.Table {
+	return panel.Table{
+		Rows: metricRows(s, t), Heads: []string{"value", "detail", "detail"},
+	}
 }
 
 // style is the attribute a cell carries because it moved on the last operator
@@ -589,22 +603,13 @@ func spinner(pulse int) string {
 	return spinnerFrames[((pulse%n)+n)%n]
 }
 
-// metricTable builds every family's line. Cell counts differ by row on
-// purpose; the layout pads them into shared columns.
-func metricTable(s metrics.Snapshot, t config.Thresholds) panel.Table {
-	return panel.Table{
-		Rows:     metricRows(s, t),
-		Heads:    columnHeads,
-		TailHead: provHead,
-	}
-}
-
 // metricRows builds every family's cells.
 func metricRows(s metrics.Snapshot, t config.Thresholds) []panel.Row {
 	siNum, siUnit := splitRatio(s.SerializationInfl, "x")
 	baseNum, baseUnit := splitValue(s.BaselineChars)
 	cpbNum, cpbUnit := splitPercent(s.ControlBurden)
 	fwdNum, fwdUnit := splitPercent(s.ForwardShare)
+	drpNum, drpUnit := splitPercent(s.Dereference)
 
 	// Three different facts share one column here, and the row is only honest if
 	// they read differently.
@@ -615,48 +620,42 @@ func metricRows(s metrics.Snapshot, t config.Thresholds) []panel.Row {
 	// glyph would then stand on every turn of the session and read as a
 	// measurement that kept coming back unknown, when nothing was measured. That
 	// case says so instead.
-	pollution := panel.Cell{ID: "pollution", Detail: "unknown"}
+	pollution := panel.Cell{ID: "pollution", Numeric: unknownGlyph}
 	switch {
 	case !can(s, classify.CapVerifiedRepair):
-		pollution = panel.Cell{ID: "pollution", Detail: "not measured here"}
+		pollution = panel.Cell{ID: "pollution", Detail: "unmeasured"}
 	case s.PollutionStatus != "" && s.PollutionStatus != metrics.PollutionUnknown:
 		pollution = panel.Cell{ID: "pollution", Detail: s.PollutionStatus}
 	}
-	recovery := "latest " + orGlyph(s.RepairStatus)
-	if s.RepairStatus == "open" {
-		recovery = "active open"
-	}
-	if s.RepairID == "" {
-		recovery = "none"
-	}
 
 	return []panel.Row{
-		{Label: "Transmission", Tail: "D", Cells: []panel.Cell{
+		{Label: "Transmission", Cells: []panel.Cell{
 			{ID: "si", Numeric: siNum, Unit: siUnit, Detail: "SI" + inflationMark(s.SerializationInfl, t)},
 			{ID: "baseline", Numeric: baseNum, Unit: baseUnit, Detail: "baseline"},
 			{ID: "now", Numeric: panel.Compact(s.UserChars), Detail: "now"},
 		}},
-		{Label: "Control", Tail: "D", Cells: []panel.Cell{
+		{Label: "Control", Cells: []panel.Cell{
 			{ID: "cpb", Numeric: cpbNum, Unit: cpbUnit, Detail: "CPB"},
 			{ID: "forward", Numeric: fwdNum, Unit: fwdUnit, Detail: "forward"},
 		}},
-		{Label: "Obligations", Tail: "D", Cells: []panel.Cell{
-			{ID: "unresolved", Numeric: panel.Compact(s.UnresolvedObligations), Detail: "candidate inventory"},
+		{Label: "Obligations", Cells: []panel.Cell{
+			{ID: "unresolved", Numeric: panel.Compact(s.UnresolvedObligations), Detail: "unresolved"},
 			{ID: "new", Numeric: "+" + panel.Compact(s.NewObligations), Detail: "new"},
 			{ID: "repeated", Numeric: panel.Compact(s.RepeatedObligations), Detail: "repeated"},
 		}},
-		{Label: "Dereference", Tail: "D", Cells: []panel.Cell{
-			{ID: "drp", Numeric: fmt.Sprintf("%d/%d", s.PointerSuccess, s.PointerSuccess+s.PointerFailure), Detail: "resolved"},
+		{Label: "Dereference", Cells: []panel.Cell{
+			{ID: "drp", Numeric: drpNum, Unit: drpUnit, Detail: "DRP"},
+			{ID: "resolved", Numeric: fmt.Sprintf("%d/%d", s.PointerSuccess, s.PointerSuccess+s.PointerFailure), Detail: "resolved"},
 			{ID: "unknown", Numeric: panel.Compact(s.PointerUnknown), Detail: "unknown"},
 		}},
-		{Label: "Recovery", Tail: "D", Cells: []panel.Cell{
-			{ID: "depth", Numeric: panel.Compact(s.RepairDepth), Detail: "depth · " + recovery},
+		{Label: "Recovery", Cells: []panel.Cell{
+			{ID: "depth", Numeric: panel.Compact(s.RepairDepth), Detail: "depth"},
 			{ID: "repair_chars", Numeric: panel.Compact(s.RepairChars), Detail: "chars"},
 			{ID: "repair_records", Numeric: panel.Compact(s.RepairRecords), Detail: "records"},
 		}},
-		{Label: "Pollution", Tail: "C", Cells: []panel.Cell{
+		{Label: "Pollution", Cells: []panel.Cell{
 			pollution,
-			{ID: "expansions", Numeric: panel.Compact(s.Expansions), Detail: "observed expansions"},
+			{ID: "expansions", Numeric: "+" + panel.Compact(s.Expansions), Detail: "expansions"},
 		}},
 	}
 }

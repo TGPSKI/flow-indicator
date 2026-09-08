@@ -20,7 +20,7 @@ import (
 // PromptVersion versions the one classifier prompt and the context object sent
 // with it. There is one prompt and one schema: prompt variation would make
 // stored classifications incomparable.
-const PromptVersion = "5"
+const PromptVersion = "6"
 
 // Prompt is the whole instruction sent to the model.
 const Prompt = `You label one turn of an operator/agent transcript for a measurement tool.
@@ -29,12 +29,14 @@ Return strict JSON only, matching this schema:
 {"segments":[{"label":"","start":0,"end":0}],
  "pointer":{"is_pointer":false,"type":"unknown","text":""},
  "correction":{"is_correction":false,"target_type":"unknown","target_key":""},
- "obligations":[{"key":"","kind":"","text":""}],
- "resolutions":[{"key":"","kind":"","evidence":""}],
+ "obligations":[],
+ "resolutions":[],
  "repair":{"target_repaired":null,"new_scope":0,"new_tasks":0,"new_validation":0,"new_constraints":0},
  "confidence":0.0}
 
 Rules:
+- Classify turn.text only. Prior turns and outstanding candidates are context,
+  not new evidence. Do not invent text or infer what an unavailable image says.
 - segment labels: forward_work, new_task, new_evidence, correction, scope_constraint,
   negative_constraint, positive_constraint, stop_condition, meta_process, handoff, handoff_after_failure,
   referent_disambiguation, temporal_disambiguation, namespace_disambiguation,
@@ -45,11 +47,15 @@ Rules:
 - correction target_type and pointer type: node, alias, file, path, task,
   temporal, quote, namespace, relation, operation, unknown.
 - obligation kinds: stop, scope, negative, positive.
+- Each obligation item has string fields key, kind, text. Return [] when the
+  current turn states no requirement. Reports, questions and references alone
+  do not introduce obligations. Never emit an empty placeholder item.
 - A new obligation has key "" and text copied exactly from the turn. The core
   derives its normalized identity. A nonempty key asserts a semantic repeat:
   copy exactly the key of one unresolved_obligation_candidates entry. Never
   invent keys or use display IDs. Independent requirements are not repeats.
-- resolutions report requirements that no longer stand. Each key must be copied
+- Each resolution item has string fields key, kind, evidence. Resolutions
+  report requirements that no longer stand. Each key must be copied
   from unresolved_obligation_candidates. Resolution kinds:
   released (the operator withdrew the requirement),
   superseded (a later requirement replaced this one),
@@ -58,8 +64,18 @@ Rules:
   An agent stating it did the thing is a claim, not verification: it is never
   satisfied. Return an empty list when nothing in the turn resolves anything.
 - evidence is one sentence naming what in the turn establishes the resolution.
-- target_repaired is null unless the turn establishes it.
-- Report unknown rather than guessing. Do not explain. Do not add fields.`
+- repair.target_repaired accepts only the JSON literals true, false, or null,
+  never a string. Use true only for evidence establishing repair, false only
+  for evidence establishing that the target is still broken, and null when
+  the turn establishes neither. An agent's own claim is not verification.
+- pointer.is_pointer and correction.is_correction are JSON booleans, never
+  strings. Set them from the turn, not from the example's false placeholders.
+  A correction rejects or asks to fix prior work; a pointer is a compact
+  reference to a file, task, alias or other referent. Unknown target identity
+  does not make an established correction or pointer false.
+- Unknown is field-specific: null for target_repaired, "unknown" for a
+  target type. Do not put "unknown", "true", "false", or "null" strings in
+  boolean fields. Do not explain. Do not add fields.`
 
 // MaxTurnBytes bounds the turn text sent for classification. A turn past this
 // size keeps its heuristic classification and the log records why: silently

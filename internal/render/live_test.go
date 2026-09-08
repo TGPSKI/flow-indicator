@@ -68,31 +68,16 @@ func TestLiveRowsAreOneWidth(t *testing.T) {
 	}
 }
 
-// The provenance marker is a column, so it lands at the same offset on every
-// metric row regardless of how wide the values printed.
-func TestLiveProvenanceColumnIsShared(t *testing.T) {
+func TestLiveOmitsProvenanceColumn(t *testing.T) {
 	v := sampleView(72)
-	// A value wide enough to have shifted the marker under the old layout.
-	v.Snapshot.RepairChars = 1234567
-	v.Snapshot.UserChars = 98765
-
-	col := -1
+	if strings.Contains(Live(v), "class") {
+		t.Fatal("live view still has a class heading")
+	}
 	for _, line := range boxLines(t, Live(v)) {
 		trimmed := strings.TrimRight(strings.TrimSuffix(line, "│"), " ")
-		if !strings.HasSuffix(trimmed, "D") && !strings.HasSuffix(trimmed, "C") {
-			continue
+		if strings.HasSuffix(trimmed, " D") || strings.HasSuffix(trimmed, " C") {
+			t.Errorf("live view still has a provenance marker:\n%s", line)
 		}
-		at := utf8.RuneCountInString(trimmed)
-		if col == -1 {
-			col = at
-			continue
-		}
-		if at != col {
-			t.Errorf("provenance ends at column %d, want %d:\n%s", at, col, line)
-		}
-	}
-	if col == -1 {
-		t.Fatal("no provenance markers found")
 	}
 }
 
@@ -107,9 +92,41 @@ func TestLiveDoesNotStretchToFillWideTerminal(t *testing.T) {
 	}
 }
 
-// A narrow terminal drops whole columns rather than truncating rows, so the
-// provenance marker survives.
-func TestLiveNarrowDropsColumnsKeepingProvenance(t *testing.T) {
+func TestLiveCompactLabelsRetainSharedTable(t *testing.T) {
+	v := sampleView(200)
+	v.Snapshot.Capabilities = []string{string(classify.CapVerifiedRepair)}
+	v.Status.Semantic = &classify.Operational{Eligible: 1, Dropped: 1}
+	out := Live(v)
+	width := panel.VisibleLen(strings.Split(out, "\n")[0])
+	if width > 80 {
+		t.Fatalf("full view needs %d columns, want at most 80:\n%s", width, out)
+	}
+	for _, want := range []string{"unresolved", "repeated", "resolved", "unknown", "expansions", "0/1 validated", "1 dropped"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("compact full view lost %q:\n%s", want, out)
+		}
+	}
+	t.Log("\n" + out)
+	if lines := len(strings.Split(strings.TrimSuffix(out, "\n"), "\n")); lines != 18 {
+		t.Errorf("full view has %d lines, want the reference layout plus one MODEL row (18)", lines)
+	}
+	column := -1
+	for _, pair := range [][2]string{{"Transmission", "baseline"}, {"Dereference", "resolved"}, {"Recovery", "chars"}, {"Pollution", "expansions"}} {
+		for _, line := range strings.Split(out, "\n") {
+			if !strings.Contains(line, pair[0]) {
+				continue
+			}
+			at := panel.VisibleLen(line[:strings.Index(line, pair[1])])
+			if column >= 0 && at != column {
+				t.Errorf("%s detail starts at %d, want shared column %d", pair[0], at, column)
+			}
+			column = at
+		}
+	}
+}
+
+// A narrow terminal keeps the primary metric and drops whole detail columns.
+func TestLiveNarrowKeepsPrimaryMetric(t *testing.T) {
 	out := Live(sampleView(46))
 	// "repeated" belongs to the third column only. "resolved" would also match
 	// the first column's "unresolved".
@@ -122,8 +139,8 @@ func TestLiveNarrowDropsColumnsKeepingProvenance(t *testing.T) {
 			continue
 		}
 		found = true
-		if !strings.HasSuffix(strings.TrimRight(strings.TrimSuffix(line, "│"), " "), "D") {
-			t.Errorf("provenance marker lost on a narrow row:\n%s", line)
+		if !strings.Contains(line, "DRP") {
+			t.Errorf("DRP lost on a narrow row:\n%s", line)
 		}
 	}
 	if !found {
@@ -162,11 +179,10 @@ func TestLiveLabelsAreTitleCaseAndRightAligned(t *testing.T) {
 	}
 }
 
-// The table carries a heading row, including over the provenance column, whose
-// letters are the least self-explaining thing on screen.
+// The shared metric columns retain their headings.
 func TestLiveHasColumnHeadings(t *testing.T) {
 	out := Live(sampleView(96))
-	for _, want := range []string{"value", "detail", provHead} {
+	for _, want := range []string{"value", "detail"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("heading %q missing:\n%s", want, out)
 		}
@@ -193,8 +209,10 @@ func TestLiveUnknownIsAGlyph(t *testing.T) {
 	v.Snapshot.PollutionStatus = metrics.PollutionUnknown
 
 	out := Live(v)
-	if strings.Contains(out, "unknown") {
-		t.Errorf("unknown still spelled out:\n%s", out)
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "Transmission") && strings.Contains(line, "unknown") {
+			t.Errorf("unknown numeric value still spelled out:\n%s", line)
+		}
 	}
 	if !strings.Contains(out, unknownGlyph) {
 		t.Errorf("no unknown glyph drawn for unmeasured values:\n%s", out)
@@ -244,7 +262,7 @@ func TestLiveShowsSemanticOperationalStatus(t *testing.T) {
 	v.Status.Semantic = &classify.Operational{Eligible: 8, Requested: 8, Completed: 3, Pending: 3, CatchUp: 2, Failed: 1, TimedOut: 1, Applied: 3, Changed: 1, LastError: "endpoint returned status 500", P95MS: 184}
 	v.Status.ModelDetails = true
 	out := Live(v)
-	for _, want := range []string{"MODEL", "3/8 validated", "1 changed", "MODEL JOBS", "3 answers", "1 active", "2 catching up", "MODEL FAIL", "1 errors", "1 timed out", "MODEL TIME", "95% completed within 184ms", "MODEL WHY", "status 500"} {
+	for _, want := range []string{"MODEL", "3/8 validated", "1 changed", "MODEL JOBS", "3 answers", "1 active", "2 catching up", "1 errors", "1 timed out", "MODEL TIME", "95% completed within 184ms", "MODEL WHY", "status 500"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("semantic status misses %q:\n%s", want, out)
 		}
@@ -255,7 +273,7 @@ func TestLiveHidesModelDetailsByDefault(t *testing.T) {
 	v := sampleView(96)
 	v.Status.Semantic = &classify.Operational{Eligible: 33, Completed: 7, Applied: 7, Changed: 6, Failed: 2, CatchUp: 24}
 	out := Live(v)
-	if !strings.Contains(out, "7/33 validated") || strings.Contains(out, "MODEL JOBS") || !strings.Contains(out, "2 errors") {
+	if !strings.Contains(out, "7/33 validated") || strings.Contains(out, "MODEL JOBS") || !strings.Contains(out, "2 failed") {
 		t.Fatalf("default model row is not compact:\n%s", out)
 	}
 }
@@ -327,7 +345,7 @@ func TestLiveHeadingsAreCentred(t *testing.T) {
 	lines := boxLines(t, Live(sampleView(72)))
 	var head, first string
 	for i, l := range lines {
-		if strings.Contains(l, "value") && strings.Contains(l, provHead) {
+		if strings.Contains(l, "value") && strings.Contains(l, "detail") {
 			head, first = l, lines[i+1]
 			break
 		}

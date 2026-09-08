@@ -12,12 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Every eligible hybrid/deferred record has a durable disposition. Bootstrap
   uses markers across all harnesses; semantic queues serve new arrivals.
   Timeouts are terminal and queued work is recorded as canceled on shutdown.
-- Semantic prompt version 5 uses lowercase context fields, explicit byte
+- Semantic prompt version 6 uses lowercase context fields, explicit byte
   lengths and correction targets, source-derived new obligation keys, and
   exact outstanding keys for semantic repeats. `classifier.constrained_json`
   enables JSON-schema decoding on supporting endpoints.
+- The semantic prompt specifies literal boolean/null repair verification and
+  forbids placeholder obligations or evidence inferred from unavailable images.
 - The full view shows validated/eligible coverage, failures, candidate inventory,
   dereference unknowns, recovery status and observed expansion counts.
+  The full view retains shared columns and compact labels; model failures share
+  the coverage line and recovery status is behind `--model-details`.
+- The TUI omits the CLASS column; reports and events retain provenance.
 - Forced watches remove stale projections before drawing. Instance records
   refresh on the one-second heartbeat independently of sidebar TTL refresh.
 - Calibration records include the profile hash and semantic prompt hash.

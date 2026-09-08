@@ -163,7 +163,7 @@ a restart. See [HERDR.md](HERDR.md).
 | `--herdr-workspace <id\|auto>` | `""` | push the same tokens onto that workspace's space row |
 | `--tail-only` | `false` | follow from the end, building no state first |
 | `--full` | `false` | the one-screen audit view instead of the side-pane meter |
-| `--model-details` | `false` | add model queues, timing and latest error; validated/eligible coverage and failures appear in the default full view |
+| `--model-details` | `false` | add model changes, failure breakdown, queues, timing, latest error and recovery status; coverage, total failures and drops share the default MODEL row |
 | `--no-color` | `false` | no ANSI attributes; `NO_COLOR` is honoured |
 | `--width <n>` | `0` | side-pane inner width in columns |
 | `--adapter <name>` | `claude-code` | narrow discovery, or decode a named file as this |

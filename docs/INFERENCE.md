@@ -139,6 +139,15 @@ Offsets refer to decoded UTF-8 bytes, including trailing newlines. They must
 fit `turn.byte_length` and land on character boundaries. JSON escape spelling
 is not part of the turn's byte length.
 
+Prompt version 6 makes unknown values field-specific: repair verification is
+the JSON literal `true`, `false`, or `null`, never a string. It distinguishes
+boolean decisions from the example placeholders and requires empty obligation
+and resolution lists when the current turn supplies no qualifying evidence.
+Schema property order matches the prompt, placing source spans before decisions.
+Constrained decoding enforces JSON types; semantic validation still rejects
+invented source spans and identities. Earlier completions remain attributable
+to their original prompt and are not reused under version 6.
+
 Text the model left uncovered is tiled as `other` rather than dropped;
 otherwise the denominator would shrink whenever the model skipped a sentence,
 raising every share it did label.
@@ -208,11 +217,19 @@ the observation.
   `flow-indicator corpus` prints turn counts before you point a metered endpoint
   at a corpus.
 
-The default live view reports `validated/eligible` and a changed count when it
-fits. The full view also shows failures, timeouts and drops.
-`watch --model-details` adds active and catch-up work, latency and the latest
+The default full view reports `validated/eligible`, total failures (errors plus
+timeouts), and drops on one MODEL row. `watch --model-details` adds the changed
+count, failure breakdown, active and catch-up work, latency and the latest
 error. These measure the instrument, not the interaction:
 **no regime rule reads them**, and they never enter a metric family.
+
+The metric table retains shared columns with compact labels: `unresolved`
+means unresolved obligation candidates, `expansions` counts observed expansions,
+and pollution `—` means unknown while `unmeasured` means the classifier cannot
+establish it. Dereference shows DRP as a percentage, successes/resolved outcomes,
+and the unknown count. Recovery depth, characters and records describe the latest episode;
+`--model-details` adds its active/latest status. Reports retain the explanations.
+The TUI omits provenance letters; reports and event files retain their evidence classes.
 
 ## Coverage
 

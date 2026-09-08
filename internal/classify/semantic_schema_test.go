@@ -46,6 +46,51 @@ func TestSemanticObligationIdentity(t *testing.T) {
 
 func strconvJSON(s string) string { raw, _ := json.Marshal(s); return string(raw) }
 
+func TestRepairVerificationUsesJSONLiterals(t *testing.T) {
+	for _, value := range []string{`"unknown"`, `"true"`, `"false"`, `"null"`, `""`, `0`, `{}`} {
+		if _, err := decodeModelOutput([]byte(`{"repair":{"target_repaired":` + value + `}}`)); err == nil {
+			t.Errorf("accepted non-literal repair verification %s", value)
+		}
+	}
+	for _, value := range []string{`true`, `false`, `null`} {
+		out, err := decodeModelOutput([]byte(`{"repair":{"target_repaired":` + value + `}}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if value == `null` && out.Repair.TargetRepaired != nil {
+			t.Fatal("unknown repair became known")
+		}
+	}
+}
+
+func TestConstrainedSchemaPreservesPromptOrder(t *testing.T) {
+	raw, err := json.Marshal(outputSchema(30))
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := -1
+	for _, key := range []string{"segments", "pointer", "correction", "obligations", "resolutions", "repair", "confidence"} {
+		at := strings.Index(string(raw), `"`+key+`":`)
+		if at <= previous {
+			t.Fatalf("schema field %s is out of prompt order: %s", key, raw)
+		}
+		previous = at
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded["properties"].(map[string]any)) != 7 {
+		t.Fatal("schema lost a property")
+	}
+	for i := 0; i < 3; i++ {
+		again, err := json.Marshal(outputSchema(30))
+		if err != nil || string(again) != string(raw) {
+			t.Fatal("schema order is not deterministic")
+		}
+	}
+}
+
 type schemaTransport func(*http.Request) (*http.Response, error)
 
 func (f schemaTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
@@ -84,7 +129,7 @@ func TestSemanticContextAndConstrainedSchema(t *testing.T) {
 	if len(res.Resolutions) != 1 || res.Resolutions[0].Key != "only edit parser.go" {
 		t.Fatalf("resolution = %+v", res.Resolutions)
 	}
-	if res.Provenance.Version != "5" {
+	if res.Provenance.Version != "6" {
 		t.Fatal("old prompt identity")
 	}
 }
